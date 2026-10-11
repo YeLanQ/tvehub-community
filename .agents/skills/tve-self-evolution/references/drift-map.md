@@ -20,6 +20,8 @@
 | 白板工具/文件管理规则 | whiteboard-usage / whiteboard-files | 操作表；改名/防覆盖规则变更重点核对 |
 | spec 新增/删除（含把推荐 spec 落地） | 引用它的单元测试例段 + skills:check 告警消一档 | 推荐写法升级为"真实测试例"，从告警清单摘除 |
 | 助手域（ai.rs/devtools 内部桥/工具目录/技能注册表） | tve-api-usage/facade-ai.md + tve-app-operations/assistant.md | 工具目录（tools.ts CATALOG）与方法清单变更两处同步 |
+| `src/runtime/runtime/playable/**` / engine.playableAd 契约变更 | tve-playable-ads/contract-layer.md + tve-sdk-scripting/ui-audio-fx.md | 契约段与模板同步；`pnpm gen:api-docs`（tve.d.ts 变更时）+ smoke-playable-ad 断言随契约改 |
+| `src/app/lib/build/playable-*.ts` / `src-tauri/src/build/channels/playable/**` / `src-tauri/src/build/forms/**` | tve-playable-ads/export-pipeline.md + extend-platform.md | 注册表/形态/管线描述同步；目标注册表 TS/Rust 镜像改一处必改另一处（两侧同题测试） |
 | tests/README.md、tests/ISSUES.md | tve-unit-testing SKILL.md 现状锚点 | 数字（用例数/套件数/P0 数）对齐 |
 
 ## 校验器的边界（人工兜底项）

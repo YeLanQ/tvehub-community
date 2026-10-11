@@ -16,6 +16,7 @@ description: 在 TvE Hub 仓库自主工作的 Agent 决策框架：任务类型
 | 调后端能力/读写资产场景/派发命令 | tve-api-usage | tve-app-operations（操作语义） |
 | 写代码改代码（组件/引擎/脚本） | tve-sdk-scripting（tve 脚本）或 tve-engine-interfaces（引擎接口） | tve-unit-testing（补测试） |
 | 写测试/调阈值/门禁拦截 | tve-unit-testing | tve-local-ci |
+| 试玩广告平台适配 / playable 渠道导出 / 结束卡 CTA 打点脚本 | tve-playable-ads | tve-sdk-scripting（脚本模板） |
 | 用户问"怎么操作"（三窗口） | tve-app-operations | — |
 | 改完代码同步文档 / skills:check 红 | tve-self-evolution | tve-local-ci |
 | 提交前自检 / 发版验证 | tve-local-ci | — |

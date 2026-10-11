@@ -85,4 +85,5 @@ description: TvE Hub 引擎侧全部接口设计：编辑器引擎（EditorEngin
 **写 tve 用户脚本（内置完整代码模板）**：`tve-sdk-scripting`——本技能讲接口设计，
 写代码用它；API 调用方式与测试空白区：`tve-api-usage`；单测/smoke 分工：`tve-unit-testing`；
 编辑器/图窗口/白板用户操作全集：`tve-app-operations`；
+试玩广告渠道与宿主契约（engine.playableAd，含平台适配配方）：`tve-playable-ads`；
 系统层：`tve-agent-autonomy` · `tve-local-ci` · `tve-self-evolution`。

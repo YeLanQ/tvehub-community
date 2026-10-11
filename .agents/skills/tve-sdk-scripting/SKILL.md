@@ -60,4 +60,5 @@ description: 用 tve SDK 为 TvE Hub 编写用户脚本（Component 组件）的
 引擎接口全景（双轨架构/序列化/构建管线）：`tve-engine-interfaces`；
 示例脚本入库规范与工坊 IPC：`tve-api-usage`；
 脚本在工作台/图窗口/白板等产品界面里的操作上下文：`tve-app-operations`；
+试玩广告渠道构建/宿主契约/平台适配（engine.playableAd 全景）：`tve-playable-ads`；
 系统层：`tve-agent-autonomy` · `tve-local-ci` · `tve-self-evolution`。
