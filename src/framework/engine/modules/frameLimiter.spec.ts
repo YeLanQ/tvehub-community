@@ -84,4 +84,13 @@ describe("FrameRateLimiter", () => {
     }
     expect(rendered).toBe(total);
   });
+
+  it("hz 探测完成前为 null，完成后为实测中位刷新率（DRS 预算基准）", () => {
+    const lim = new FrameRateLimiter(60);
+    expect(lim.hz).toBeNull();
+    for (let i = 0; i < 71; i++) lim.tick(16.667 * i);
+    expect(lim.hz).not.toBeNull();
+    expect(lim.hz as number).toBeGreaterThan(58);
+    expect(lim.hz as number).toBeLessThan(62);
+  });
 });

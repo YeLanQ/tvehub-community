@@ -7,6 +7,8 @@ import "../../styles/components/debug-stats-panel.scss";
 const { engine } = getEditorStore();
 const stats = ref<RenderStats>({
   fps: 0,
+  idle: false,
+  renderScale: 1,
   drawCalls: 0,
   triangles: 0,
   lines: 0,
@@ -41,9 +43,16 @@ function fmt(n: number): string {
   <div class="debug-stats-panel mono">
     <div class="stat-row">
       <span class="stat-label">FPS</span>
-      <span class="stat-value" :class="{ low: stats.fps < 30, mid: stats.fps >= 30 && stats.fps < 50 }">
-        {{ stats.fps }}
-      </span>
+      <!-- 空闲降档（视口静止省电策略）单列灰色标注：12fps 是设计行为不是掉帧 -->
+      <span
+        class="stat-value"
+        :class="stats.idle ? 'idle' : { low: stats.fps < 30, mid: stats.fps >= 30 && stats.fps < 50 }"
+      >{{ stats.fps }}{{ stats.idle ? " · 空闲" : "" }}</span>
+    </div>
+    <!-- 自适应渲染精度：DRS 介入（<100%）才显示——降采样保帧率的可见性 -->
+    <div v-if="stats.renderScale < 1" class="stat-row">
+      <span class="stat-label">渲染精度</span>
+      <span class="stat-value">{{ Math.round(stats.renderScale * 100) }}%</span>
     </div>
     <div class="stat-row">
       <span class="stat-label">DrawCalls</span>

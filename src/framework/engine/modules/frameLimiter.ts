@@ -17,6 +17,13 @@ export class FrameRateLimiter {
   private quota = 1;
   /** 每帧配额增量（cap/hz）；探测未完成 = 0（配额路径整体旁路，全速渲染） */
   private quotaInc = 0;
+  /** 实测刷新率（Hz；探测完成前 null）——自适应渲染精度等外部决策的预算基准 */
+  private detectedHz: number | null = null;
+
+  /** 实测显示器刷新率；探测未完成（约 70 tick）返回 null */
+  get hz(): number | null {
+    return this.detectedHz;
+  }
 
   constructor(private readonly cap: number) {}
 
@@ -37,6 +44,7 @@ export class FrameRateLimiter {
           const hz = 1000 / sorted[Math.floor(sorted.length / 2)];
           // cap ≥ 实测刷新率 → 配额 1（全渲）；否则按比例（60 上限在 60Hz 屏零回归）
           this.quotaInc = Math.min(1, this.cap / Math.max(30, hz));
+          this.detectedHz = hz;
         }
       }
       return true;

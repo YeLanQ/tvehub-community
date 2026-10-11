@@ -5,6 +5,7 @@ import { registerThreeRHIBackends } from "../../../engine/rhi/backends/three";
 import { createRPIPipeline, type RPIClearDesc, type RPIPipeline } from "../../../engine/rpi";
 import type { PiPRequest } from "./CameraPiP";
 import { FrameRateLimiter } from "./frameLimiter";
+import { RenderScaleController } from "./renderScale";
 
 export type RendererBackend = "webgl" | "webgpu" | "auto";
 
@@ -19,9 +20,13 @@ const IDLE_FPS = 12;
  *  来源——Bresenham 数帧锁 60（60Hz 屏全渲零回归），与播放器缺省帧率一致 */
 const ACTIVE_FPS_CAP = 60;
 
-/** 渲染统计快照（调试面板每帧/定时拉取） */
+/** 渲染统计快照（调试面板每帧/定时拉取）：fps = 最近 1s 实际渲染帧数；
+ *  idle = 最近一帧处于空闲降档（12fps 档，非负载掉帧）；renderScale =
+ *  自适应渲染精度（1 = 原生，<1 = 已为保帧率降采样） */
 export interface RenderStats {
   fps: number;
+  idle: boolean;
+  renderScale: number;
   drawCalls: number;
   triangles: number;
   lines: number;
@@ -108,12 +113,22 @@ export class RendererManager {
   private lastIdleRenderAt = 0;
   /** 活动期帧率配额（Bresenham 数帧；见 ACTIVE_FPS_CAP） */
   private activeLimiter = new FrameRateLimiter(ACTIVE_FPS_CAP);
+  /** 自适应渲染精度（DRS）：像素量随窗口尺寸变化，最大化/重场景 GPU 超预算时
+   *  降渲染分辨率保帧率（见 renderScale.ts）；renderScale 供调试面板展示 */
+  private renderScaleCtl = new RenderScaleController();
+  /** mount 时的基准像素比（min(dpr, 2)；DRS 在其上乘精度档） */
+  private basePixelRatio = 1;
+  /** 当前生效的渲染精度（1 = 原生） */
+  private renderScale = 1;
+  /** 上一个 rAF tick 时间戳（tick 帧距 = DRS 过载信号） */
+  private lastRafAt = 0;
   /** 场景活动谓词（引擎注入：动画播放中/粒子发射中/物理模拟中等返回 true 即保持全速） */
   private activityHooks: (() => boolean)[] = [];
 
-  /** 渲染统计：FPS（EMA 平滑）+ 帧时间戳 */
-  private statsFps = 0;
-  private statsLastTime = 0;
+  /** 渲染统计：最近 1s 滑动窗口内的实际渲染帧时间戳（fps = 窗口内帧数）+
+   *  最近一渲染帧是否处于空闲降档（statsIdle；调试面板标注用） */
+  private frameTimes: number[] = [];
+  private statsIdle = false;
   /** 场景遍历统计缓存（getStats 被拉取时按需更新；面板关闭 = 零遍历） */
   private statsMeshes = 0;
   private statsVertices = 0;
@@ -148,9 +163,10 @@ export class RendererManager {
     // HDR/LDR 渲染合成：HDR 用 ACES 电影级色调映射，LDR 常规输出（不映射）；
     // PCF 采样：每灯的 shadow.radius（Shadow 类型 Hard/Soft）只在 PCF 下生效，
     // PCFSoft 会忽略 radius，无法做每灯软硬差异
+    this.basePixelRatio = Math.min(window.devicePixelRatio, 2);
     this.device.configureDisplay({
       toneMapping: (options?.hdrMode ?? "ldr") === "hdr" ? "aces-filmic" : "none",
-      pixelRatio: Math.min(window.devicePixelRatio, 2),
+      pixelRatio: this.basePixelRatio,
       shadowMapEnabled: true,
       shadowFilter: "pcf",
     });
@@ -177,12 +193,19 @@ export class RendererManager {
     this.orbit.dampingFactor = 0.08;
 
     // 空闲降帧的活动信号：任何视口输入与相机运动（含阻尼收敛期间）恢复全速渲染。
-    // passive 监听只写时间戳，无分配；键盘挂 window（快捷键多在全局层）。
+    // passive 监听只写时间戳，无分配；键盘挂 window（快捷键多在全局层）但
+    // 不认输入控件内的按键（面板输入框/脚本编辑器打字与视口无关，不该把
+    // 视口从空闲档唤醒——否则正常面板编辑会让视口 60↔12 反复横跳）。
     const mark = (): void => this.markActivity();
+    const markIfNotEditable = (e: KeyboardEvent): void => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      mark();
+    };
     dom.addEventListener("pointerdown", mark, { passive: true });
     dom.addEventListener("pointermove", mark, { passive: true });
     dom.addEventListener("wheel", mark, { passive: true });
-    window.addEventListener("keydown", mark, { passive: true });
+    window.addEventListener("keydown", markIfNotEditable, { passive: true });
     this.orbit.addEventListener("change", mark);
 
     dom.addEventListener("contextmenu", (e) => e.preventDefault(), { passive: false });
@@ -347,16 +370,25 @@ export class RendererManager {
     // 也驱动阴影图按需重画（见下方 shadowMap 门控）
     const contentActive = this.activityHooks.some((h) => h());
     const now = performance.now();
+    // rAF tick 帧距（含被限流跳过的 tick）：vsync 锁定时恒等于刷新间隔，
+    // GPU/主线程超预算会把它拖长——自适应渲染精度的过载信号
+    const rafDt = this.lastRafAt > 0 ? now - this.lastRafAt : 0;
+    this.lastRafAt = now;
+    let idleGated = false;
     // 空闲降帧（功耗）：无交互且无活动内容（活动钩子，见 viewportActive）时视口
     // 降频渲染——编辑器空闲时 GPU/CPU 从满速 rAF 降到 12fps，交互即刻恢复全速
     if (now - this.lastActivityAt > IDLE_DELAY_MS && !contentActive) {
       if (now - this.lastIdleRenderAt < 1000 / IDLE_FPS) return;
       this.lastIdleRenderAt = now;
+      idleGated = true;
     } else if (!this.activeLimiter.tick(now)) {
       // 活动期帧率上限（功耗）：高刷屏 Bresenham 数帧锁 60，60Hz 屏全渲零回归
       return;
     }
     this.applySizeIfNeeded();
+    // 换档必须在渲染前：缓冲重分配会清成黑，若在 renderActive 之后换档，
+    // 刚渲染的帧被清掉、黑缓冲被呈现 = 启动/窗口变化时黑闪（回归教训）
+    this.adaptRenderScale(rafDt);
     this.orbit?.update();
     this.renderCb?.();
     // 静态场景阴影图按需重画（WebGL）：阴影不依赖观察相机，轨道移动无需重画；
@@ -367,8 +399,28 @@ export class RendererManager {
       this.shadowDirtyRequested = false;
     }
     if (this.device) this.renderActive();
-    this.tickStats();
+    this.recordFrame(now, idleGated);
   };
+
+  /** 自适应渲染精度：刷新率探测完成后的渲染帧上评估（tick 帧距需刷新预算
+   *  基准；>250ms 空档属挂起/遮挡瞬态不入样本）。换档 = 基准像素比 × 精度档
+   *  重设像素比并按当前尺寸重分配缓冲（three 的 setPixelRatio 不立即重分配）。
+   *  调用时序约束：必须先于 renderActive——重分配清空缓冲，同任务内随后的
+   *  渲染把新缓冲填满再呈现；放渲染后会闪黑帧。
+   *  最大化/高分屏重场景从此不再掉帧率：超预算降分辨率，有余量自动还原。 */
+  private adaptRenderScale(rafDt: number): void {
+    if (!this.device) return;
+    const hz = this.activeLimiter.hz;
+    if (hz === null || rafDt <= 0 || rafDt >= 250) return;
+    const prev = this.renderScaleCtl.scale;
+    const scale = this.renderScaleCtl.tick(rafDt > (1000 / hz) * 1.35);
+    if (scale === prev) return;
+    this.renderScale = scale;
+    this.device.setPixelRatio(this.basePixelRatio * scale);
+    if (this.appliedW > 0 && this.appliedH > 0) {
+      this.device.setSize(this.appliedW, this.appliedH, false);
+    }
+  }
 
   /** 阴影脏标记（场景内容变化时由引擎标脏；下一帧重画一次阴影图） */
   markShadowDirty(): void {
@@ -376,17 +428,20 @@ export class RendererManager {
   }
   private shadowDirtyRequested = true;
 
-  /** 每帧统计：FPS（EMA 平滑）。网格/顶点遍历统计只在 getStats 被拉取时按需做 */
-  private tickStats(): void {
-    const now = performance.now();
-    if (this.statsLastTime > 0) {
-      const dt = now - this.statsLastTime;
-      if (dt > 0) {
-        const instant = 1000 / dt;
-        this.statsFps = this.statsFps > 0 ? this.statsFps * 0.9 + instant * 0.1 : instant;
-      }
+  /** 每实际渲染一帧记录一次（idle = 本帧是否空闲降档；测试可直接注入时间戳）。
+   *  FPS = 最近 1s 滑动窗口内的渲染帧数：档位切换（60↔12）在读数上是单调
+   *  过渡而非振荡；>250ms 帧距（窗口遮挡/后台 rAF 挂起的秒级空档）剔除
+   *  重建——空档不产帧，计入会把读数砸穿再爬升（旧 EMA 口径猛降猛升的
+   *  来源之一）。 */
+  recordFrame(now: number, idle: boolean): void {
+    if (this.frameTimes.length > 0 && now - this.frameTimes[this.frameTimes.length - 1] > 250) {
+      this.frameTimes.length = 0;
     }
-    this.statsLastTime = now;
+    this.frameTimes.push(now);
+    while (this.frameTimes.length > 0 && now - this.frameTimes[0] > 1000) {
+      this.frameTimes.shift();
+    }
+    this.statsIdle = idle;
   }
 
   /** 获取渲染统计快照（调试面板用；网格/顶点数按需遍历并缓存 500ms） */
@@ -412,7 +467,9 @@ export class RendererManager {
       this.statsVertices = vertices;
     }
     return {
-      fps: Math.round(this.statsFps),
+      fps: this.frameTimes.length,
+      idle: this.statsIdle,
+      renderScale: this.renderScale,
       drawCalls: info?.drawCalls ?? 0,
       triangles: info?.triangles ?? 0,
       lines: info?.lines ?? 0,

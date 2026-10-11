@@ -34,5 +34,11 @@
     &.mid {
       color: var(--warn);
     }
+
+    /* 空闲降档（设计行为）：弱化标注，不按掉帧告警配色 */
+    &.idle {
+      color: var(--text-dim);
+      font-weight: 400;
+    }
   }
 }
