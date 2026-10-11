@@ -357,6 +357,11 @@ export const CHANNEL_RUNTIMES: Record<"web" | "wechat" | "playable", ChannelRunt
         "url": "/engine/runtime/playable/adapters/meta.mjs"
       },
       {
+        "key": "engine/runtime/playable/adapters/mintegral.mjs",
+        "rel": "engine/runtime/playable/adapters/mintegral.mjs",
+        "url": "/engine/runtime/playable/adapters/mintegral.mjs"
+      },
+      {
         "key": "engine/runtime/playable/adapters/mraid.mjs",
         "rel": "engine/runtime/playable/adapters/mraid.mjs",
         "url": "/engine/runtime/playable/adapters/mraid.mjs"
@@ -965,6 +970,11 @@ export const CHANNEL_RUNTIMES: Record<"web" | "wechat" | "playable", ChannelRunt
         "key": "engine/runtime/playable/adapters/meta.mjs",
         "rel": "engine/runtime/playable/adapters/meta.mjs",
         "url": "/engine/runtime/playable/adapters/meta.mjs"
+      },
+      {
+        "key": "engine/runtime/playable/adapters/mintegral.mjs",
+        "rel": "engine/runtime/playable/adapters/mintegral.mjs",
+        "url": "/engine/runtime/playable/adapters/mintegral.mjs"
       },
       {
         "key": "engine/runtime/playable/adapters/mraid.mjs",

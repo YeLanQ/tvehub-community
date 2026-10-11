@@ -6,16 +6,22 @@
 
 | 文件 | 职责 |
 |---|---|
-| `types.ts` | `PlayableHostId`（"web"/"mraid"/"meta"/"google"）+ `PlayableHost` 统一适配器接口 |
-| `detect.ts` | 探测链（mraid → meta → google → web 回退），只读全局对象形状、零副作用 |
+| `types.ts` | `PlayableHostId`（"web"/"mraid"/"meta"/"google"/"mintegral"）+ `PlayableHost` 统一适配器接口 |
+| `detect.ts` | 探测链（mraid → meta → google → mintegral → web 回退），只读全局对象形状、零副作用 |
 | `adapters/mraid.ts` | IAB mraid：ready 等待（3s 超时放行）/ viewableChange / `mraid.open()` |
 | `adapters/meta.ts` | FbPlayableAd.onCTAClick（新）/ FBPlayableOnCTAClick（旧） |
 | `adapters/google.ts` | ExitApi.exit() |
+| `adapters/mintegral.ts` | window.install()（CTA）/ window.gameEnd()（gameOver/gameEnd 转发） |
 | `index.ts` | 安装入口：统一面单例 + window 面安装 + 可见性监听汇聚 + 自动 gameStart |
+
+**宿主 id ≠ 导出目标 id**：ironsource 目标（Unity Grow）官方 spec=MRAID 3.0，
+运行时探测落 `"mraid"`；目标是构建侧概念（决定产物形态/目录），宿主 id 只按
+运行时真实契约落名。
 
 **PlayableHost 接口**（一个平台一份实现）：`id` / `cta()` / `isViewable()` /
 `onViewableChange(cb) → 解绑函数` / `report(event, data?)`（平台转发位；meta/
-google/mraid 无游戏事件 API = no-op，留痕在安装层统一做）。
+google/mraid 无游戏事件 API = no-op；mintegral 把 gameOver/gameEnd 转发
+window.gameEnd；其余留痕在安装层统一做）。
 
 **安装门控**：`installPlayableAd(cfg)` 读产物 config——`cfg.playableAd !== true`
 返回 null 零开销休眠（web/wechat 渠道与编辑器预览不写该键）；重复调用幂等返回

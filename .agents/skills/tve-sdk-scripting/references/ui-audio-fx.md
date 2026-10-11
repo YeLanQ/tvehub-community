@@ -126,10 +126,13 @@ export default class EndCard extends Component {
 }
 ```
 
-契约速查：`engine.playableAd.host`（"mraid"/"meta"/"google"/"web"）、
-`cta()`（自动映射 mraid.open / FbPlayableAd.onCTAClick / ExitApi.exit，商店跳转
-由广告宿主接管）、`isViewable()`、`onViewableChange(cb) → 解绑函数`、
+契约速查：`engine.playableAd.host`（"mraid"/"meta"/"google"/"mintegral"/"web"）、
+`cta()`（自动映射 mraid.open / FbPlayableAd.onCTAClick / ExitApi.exit /
+window.install，商店跳转由广告宿主接管）、`isViewable()`、
+`onViewableChange(cb) → 解绑函数`、
 `report(event, data?)`（生命周期打点：gameStart 宿主落定后由运行时自动上报一次；
-gameOver/gameRestart/自定义事件按时机手动调，转发平台宿主通道 + 控制台留痕）。
-构建入口：构建面板 → 试玩广告渠道 → 勾选目标（Meta/Google/MRAID 通用）→ 导出
+gameOver/gameRestart/自定义事件按时机手动调，转发平台宿主通道 + 控制台留痕，
+Mintegral 的 gameOver/gameEnd 转发 window.gameEnd）。
+构建入口：构建面板 → 试玩广告渠道 → 勾选目标（Meta/Google/MRAID/Unity Grow 单页、
+Mintegral 多文件 zip）→ 导出
 `build/playable/<目标>/index.html`。

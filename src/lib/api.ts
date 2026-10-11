@@ -790,6 +790,8 @@ export interface PlayableTargetResult {
   out_rel: string;
   /** 单页 HTML 字节数（multi 形态为 0） */
   html_bytes: number;
+  /** multi 形态自动打包的上传 zip（build/playable/<id>.zip；single 缺省） */
+  zip_rel?: string;
 }
 
 /** 构建导出结果（与 Rust build::BuildResult 对应） */

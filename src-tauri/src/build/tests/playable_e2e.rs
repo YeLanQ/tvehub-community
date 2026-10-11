@@ -159,7 +159,7 @@ fn playable_preflight_rejections() {
     assert!(err.contains("未知目标"), "未知目标拦截: {err}");
 
     let err = run_build(
-        fx.job(vec!["ironsource".into()], fx.runtime_files()),
+        fx.job(vec!["pangle".into()], fx.runtime_files()),
         &JobCtx::default(),
     )
     .unwrap_err();
@@ -170,6 +170,94 @@ fn playable_preflight_rejections() {
     files.remove("index.html");
     let err = run_build(fx.job(vec!["mraid".into()], files), &JobCtx::default()).unwrap_err();
     assert!(err.contains("index.html"), "缺单页入口拦截: {err}");
+}
+
+/// P2 真实目标混形态：ironsource（单页，官方 spec=单 HTML+MRAID 3.0）+
+/// mintegral（多文件 zip 路线）——单页目录只产入口 HTML，多文件目录产普通
+/// 静态站点（config 外置、无 gzip 归档），config 携带目标清单
+#[test]
+fn playable_real_targets_mixed_forms() {
+    let fx = Fixture::new("real");
+    let result = run_build(
+        fx.job(vec!["ironsource".into(), "mintegral".into()], fx.runtime_files()),
+        &JobCtx::default(),
+    )
+    .unwrap_or_else(|e| panic!("混形态构建失败: {e}"));
+    assert!(result.ok);
+    assert_eq!(result.targets.len(), 2);
+    assert_eq!(result.targets[0].id, "ironsource");
+    assert_eq!(result.targets[0].form, "single");
+    assert_eq!(result.targets[0].out_rel, "build/playable/ironsource");
+    assert!(result.targets[0].html_bytes > 0);
+    assert_eq!(result.targets[1].id, "mintegral");
+    assert_eq!(result.targets[1].form, "multi");
+    assert_eq!(result.targets[1].out_rel, "build/playable/mintegral");
+    assert_eq!(result.targets[1].html_bytes, 0, "多文件形态不报单页字节数");
+    assert_eq!(
+        result.targets[1].zip_rel.as_deref(),
+        Some("build/playable/mintegral.zip"),
+        "multi 形态自动附上传 zip"
+    );
+    assert!(
+        result.targets[0].zip_rel.is_none(),
+        "single 形态不打包（index.html 直传）"
+    );
+
+    // ironsource：单页目录同构（只 index.html，数据内联 + 激活键）
+    let single_dir = fx.root.join("build/playable/ironsource");
+    let single_files: Vec<String> = fs::read_dir(&single_dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(single_files, vec!["index.html".to_string()]);
+    let html = fs::read_to_string(single_dir.join("index.html")).unwrap();
+    assert!(html.contains("__TVE_BUILD_DATA"), "单页内联数据");
+    assert!(
+        html.contains("\"playableTargets\":[\"ironsource\",\"mintegral\"]"),
+        "config 携带目标清单"
+    );
+
+    // mintegral：多文件目录=普通静态站点（config 外置、无 gzip 归档）
+    let multi_dir = fx.root.join("build/playable/mintegral");
+    let multi_files: Vec<String> = fs::read_dir(&multi_dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    for expected in ["index.html", "config.json", "player.mjs", "README.txt", "server.mjs"] {
+        assert!(multi_files.iter().any(|f| f == expected), "多文件目录缺 {expected}");
+    }
+    assert!(
+        !multi_files.iter().any(|f| f.contains("gzip")),
+        "多文件形态不产 gzip 归档（广告平台要普通文件打包）"
+    );
+    let multi_html = fs::read_to_string(multi_dir.join("index.html")).unwrap();
+    assert!(!multi_html.contains("__TVE_BUILD_DATA"), "多文件入口数据外置");
+    let cfg_text = fs::read_to_string(multi_dir.join("config.json")).unwrap();
+    assert!(cfg_text.contains("\"playableAd\":true"), "外置 config 携带激活键");
+    assert!(cfg_text.contains("\"playableTargets\":[\"ironsource\",\"mintegral\"]"));
+    // 多文件模板的 player 标签随入口落盘（运行时代码按文件布局）
+    assert!(multi_html.contains("./player.mjs"), "入口引用运行时脚本");
+    assert!(multi_dir.join("engine").is_dir(), "engine 目录落盘");
+
+    // 上传 zip：内层命名约定（<目标>.zip > <目标>/ > <目标>.html，入口改名）
+    let zip_path = fx.root.join("build/playable/mintegral.zip");
+    let zip_file = fs::File::open(&zip_path).expect("zip 落盘");
+    let mut archive = zip::ZipArchive::new(zip_file).expect("zip 可读");
+    let names: Vec<String> = (0..archive.len())
+        .map(|i| archive.by_index(i).unwrap().name().unwrap().into_owned())
+        .collect();
+    for expected in [
+        "mintegral/mintegral.html",
+        "mintegral/player.mjs",
+        "mintegral/config.json",
+        "mintegral/engine/",
+    ] {
+        assert!(names.iter().any(|n| n == expected), "zip 缺 {expected}（实际 {names:?}）");
+    }
+    assert!(
+        !names.iter().any(|n| n.ends_with("/index.html")),
+        "zip 内入口已改名，不残留 index.html"
+    );
 }
 
 /// CDN 选项对 playable 渠道无效：即使 IPC 误传 cdn=true 也强制内嵌（试玩禁外链）

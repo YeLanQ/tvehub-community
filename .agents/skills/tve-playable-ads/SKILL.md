@@ -1,6 +1,6 @@
 ---
 name: tve-playable-ads
-description: TvE Hub 试玩广告渠道（playable）全量接口设计：构建渠道（目标注册表/单页多文件形态导出/双入口模板）、运行时宿主契约层（engine.playableAd 统一面 = CTA/可见性暂停/打点上报）、平台适配扩展配方（mraid/Meta/Google 已落地，ironSource/Mintegral/Pangle 占位待接）。凡要加广告平台适配、写结束卡/CTA/打点脚本、动 build/playable 导出链、排查试玩产物问题，一律先用本技能——宿主对接禁止绕开内置契约另写一套。
+description: TvE Hub 试玩广告渠道（playable）全量接口设计：构建渠道（目标注册表/单页多文件形态导出/双入口模板）、运行时宿主契约层（engine.playableAd 统一面 = CTA/可见性暂停/打点上报）、平台适配扩展配方（meta/google/mraid/ironsource/mintegral 已落地，pangle 占位待官方 spec）。凡要加广告平台适配、写结束卡/CTA/打点脚本、动 build/playable 导出链、排查试玩产物问题，一律先用本技能——宿主对接禁止绕开内置契约另写一套。
 ---
 
 # 试玩广告渠道（playable）
@@ -35,22 +35,28 @@ description: TvE Hub 试玩广告渠道（playable）全量接口设计：构建
 | 要做的事 | 读 |
 |---|---|
 | 写结束卡/CTA/打点脚本（engine.playableAd 消费侧） | references/contract-layer.md 契约节；完整模板在 tve-sdk-scripting references/ui-audio-fx.md |
-| 加一个广告平台适配（含 postMessage 族） | references/extend-platform.md（逐条 checklist） |
+| 加一个广告平台适配（解锁占位目标） | references/extend-platform.md（逐条 checklist + 已核平台结论表） |
 | 动构建导出链（目标注册表/形态/模板/产物布局/IPC） | references/export-pipeline.md |
 | 排查 playable 产物问题（构建失败/CTA 无反应/打点缺失/白屏） | references/export-pipeline.md 排查节 |
 
 ## 契约速览（细节在 references/）
 
 - **SDK 面**：`engine.playableAd.{host, cta(), isViewable(), onViewableChange(cb), report(event, data?)}`；
-  `host` ∈ "mraid" | "meta" | "google" | "web"（web = 非广告环境，全部空转+留痕）。
+  `host` ∈ "mraid" | "meta" | "google" | "mintegral" | "web"（web = 非广告环境，
+  全部空转+留痕；ironsource 目标官方=MRAID 3.0，探测落 "mraid"）。
 - **探测链**（detect.ts，首个命中胜出）：mraid（loading→ready 等待 3s 超时）→
-  meta（FbPlayableAd 新 / FBPlayableOnCTAClick 旧）→ google（ExitApi）→ web 回退。
+  meta（FbPlayableAd 新 / FBPlayableOnCTAClick 旧）→ google（ExitApi）→
+  mintegral（window.install / gameEnd）→ web 回退。
 - **打点**：gameStart 宿主落定后**自动上报一次**；gameOver/gameRestart/自定义
-  事件由脚本按时机 `report()`；转发平台通道 + 控制台恒留痕。
-- **目标注册表**（TS/Rust 双侧镜像）：meta/google/mraid 可用（均 single 单页）；
-  ironsource/mintegral（multi）、pangle（single）占位「即将支持」。
+  事件由脚本按时机 `report()`；转发平台通道（mintegral gameOver→window.gameEnd）
+  + 控制台恒留痕。
+- **目标注册表**（TS/Rust 双侧镜像）：meta/google/mraid/ironsource 可用（均
+  single 单页）、mintegral 可用（multi 多文件 zip 路线）；pangle（single）占位
+  「官方 spec 登录墙内未核实」。逐家官方 spec 结论见 references/extend-platform.md
+  已核平台结论表。
 - **产物**：`build/playable/<目标>/index.html`（single）或 `<目标>/`（multi
-  静态站点）；both 目标分 `<目标>/single/` + `<目标>/multi/`。
+  静态站点，**自动附上传包 `<目标>.zip`**，内层 `<目标>/<目标>.html` 命名约定）；
+  both 目标分 `<目标>/single/` + `<目标>/multi/`。
 
 ## 姊妹技能
 

@@ -74,7 +74,7 @@ describe("applyPlayableExportArtifacts 双形态入口注入", () => {
     const files: Record<string, string> = {};
     await applyPlayableExportArtifacts(
       opts({
-        playableTargets: ["meta", "ironsource"],
+        playableTargets: ["meta", "mintegral"],
         playableTemplates: { single: "web:single", multi: "web:multi" },
       }),
       files,

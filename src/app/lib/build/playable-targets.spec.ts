@@ -21,12 +21,14 @@ describe("PLAYABLE_TARGETS 注册表", () => {
       "mintegral",
       "pangle",
     ]);
-    // P0 三大通用族可用
-    for (const t of PLAYABLE_TARGETS.slice(0, 3)) expect(t.available).toBe(true);
+    // P0 三大通用族 + P2 核实过官方 spec 的 ironsource/mintegral 可用
+    for (const t of PLAYABLE_TARGETS.slice(0, 5)) expect(t.available).toBe(true);
     // 占位目标不可用
-    for (const t of PLAYABLE_TARGETS.slice(3)) expect(t.available).toBe(false);
+    for (const t of PLAYABLE_TARGETS.slice(5)) expect(t.available).toBe(false);
     expect(playableTargetById("meta")?.form).toBe("single");
-    expect(playableTargetById("ironsource")?.form).toBe("multi");
+    // ironSource 并入 Unity Grow：官方 spec=单 HTML+MRAID 3.0（非历史 postMessage 多文件）
+    expect(playableTargetById("ironsource")?.form).toBe("single");
+    expect(playableTargetById("mintegral")?.form).toBe("multi");
     expect(playableTargetById("nope")).toBeNull();
   });
 });
@@ -34,13 +36,13 @@ describe("PLAYABLE_TARGETS 注册表", () => {
 describe("neededForms 形态展开", () => {
   it("single 目标 → {single}；multi 目标 → {multi}（纯映射，不管 available）", () => {
     expect(neededForms(["meta", "google"])).toEqual(new Set(["single"]));
-    expect(neededForms(["ironsource"])).toEqual(new Set(["multi"]));
+    expect(neededForms(["mintegral"])).toEqual(new Set(["multi"]));
   });
 
   it("both 展开两种形态；未知目标被忽略", () => {
     // 当前注册表无 both 目标：混勾 single+multi 得两形态（与 both 等效的产物面）
-    expect(neededForms(["meta", "ironsource"])).toEqual(new Set(["single", "multi"]));
-    expect(neededForms(["mintegral", "nope"]).has("multi")).toBe(true);
+    expect(neededForms(["meta", "mintegral"])).toEqual(new Set(["single", "multi"]));
+    expect(neededForms(["ironsource", "nope"]).has("single")).toBe(true);
     expect(neededForms([]).size).toBe(0);
   });
 });
@@ -48,7 +50,7 @@ describe("neededForms 形态展开", () => {
 describe("targetOutRel 产物目录", () => {
   it("单一形态目标直接占目标目录", () => {
     expect(targetOutRel("meta", "single")).toBe("meta");
-    expect(targetOutRel("ironsource", "multi")).toBe("ironsource");
+    expect(targetOutRel("mintegral", "multi")).toBe("mintegral");
   });
 
   it("未知目标回退目标目录（preflight 前的兜底形态）", () => {

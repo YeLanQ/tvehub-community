@@ -3,7 +3,8 @@
 // 试玩广告接口层冒烟（Node 直接运行 public/engine 产物）：探测链与统一面契约——
 //   ① 未启用（config 无 playableAd）→ 不安装、面为 null；
 //   ② 探测链按序命中：mraid（含 loading→ready 等待与 viewableChange 转发）→
-//      meta（FbPlayableAd / FBPlayableOnCTAClick 两代桥）→ google（ExitApi）；
+//      meta（FbPlayableAd / FBPlayableOnCTAClick 两代桥）→ google（ExitApi）→
+//      mintegral（window.install / gameEnd 官方双 API）；
 //   ③ 全部落空 = web 宿主（CTA 空转不抛错）；
 //   ④ 重复安装幂等；window.__tvePlayableAd 与 SDK 面同源；
 //   ⑤ 事件打点：宿主落定自动 gameStart、手动 report 留痕转发、未激活空转。
@@ -23,7 +24,15 @@ const loadModule = async (tag) => import(`${MODULE_URL}?case=${tag}`);
 
 /** 清理用例注入的广告宿主全局 */
 function clearHosts() {
-  for (const k of ["mraid", "FbPlayableAd", "FBPlayableOnCTAClick", "ExitApi", "__tvePlayableAd"]) {
+  for (const k of [
+    "mraid",
+    "FbPlayableAd",
+    "FBPlayableOnCTAClick",
+    "ExitApi",
+    "install",
+    "gameEnd",
+    "__tvePlayableAd",
+  ]) {
     delete globalThis[k];
   }
 }
@@ -107,7 +116,28 @@ function clearHosts() {
   ok(opens === 1, "CTA 映射 mraid.open");
 }
 
-// [5] web 回退：无宿主环境 CTA 空转不抛错
+// [5] mintegral：window.install / gameEnd 官方双 API（探测放末位）
+{
+  clearHosts();
+  const mod = await loadModule("mintegral");
+  let installs = 0;
+  let gameEnds = 0;
+  globalThis.install = () => installs++;
+  globalThis.gameEnd = () => gameEnds++;
+  const handle = mod.installPlayableAd({ playableAd: true });
+  ok((await handle.ready) === "mintegral", "探测落定 mintegral");
+  handle.surface.cta();
+  ok(installs === 1, "CTA 映射 window.install");
+  handle.surface.report("gameOver");
+  ok(gameEnds === 1, "report(gameOver) 转发 window.gameEnd");
+  handle.surface.report("gameEnd");
+  ok(gameEnds === 2, "report(gameEnd) 同样转发");
+  handle.surface.report("gameStart");
+  ok(gameEnds === 2, "gameStart 无官方 API 不转发");
+  ok(handle.surface.isViewable() === true, "mintegral 无可见性 API，恒可见");
+}
+
+// [6] web 回退：无宿主环境 CTA 空转不抛错
 {
   clearHosts();
   const mod = await loadModule("web");
@@ -123,7 +153,7 @@ function clearHosts() {
   ok(install.surface.isViewable() === true, "web 宿主恒可见");
 }
 
-// [6] 事件打点：宿主落定后自动 gameStart + 手动 report 转发留痕
+// [7] 事件打点：宿主落定后自动 gameStart + 手动 report 转发留痕
 {
   clearHosts();
   const mod = await loadModule("report");

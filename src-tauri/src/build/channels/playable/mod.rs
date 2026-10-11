@@ -4,7 +4,9 @@
 //!
 //! 产物约束（resolve/preflight 强制）：CDN 强制关（试玩禁外链，three 恒内嵌）；
 //! 多文件形态强制非 gzip（平台的 assets.gzip 归档是 web 托管格式，广告平台
-//! 上传要普通文件）；config 写入 playableAd/playableTargets 供运行时契约层
+//! 上传要普通文件）；multi 形态产物自动打包 `<目标>.zip`（内层 `<目标>/` +
+//! 入口改名 `<目标>.html` 的官方命名约定，见 zip_package.rs）；config 写入
+//! playableAd/playableTargets 供运行时契约层
 //! （src/runtime/runtime/playable）激活。目标注册表见 targets.rs（TS 镜像）。
 
 use std::collections::HashMap;
@@ -20,6 +22,7 @@ use crate::build::pipeline::{progress, ChannelPipeline};
 use crate::build::steps::config::product_config;
 
 mod targets;
+mod zip_package;
 use self::targets::TargetForm;
 
 /// playable 渠道：试玩广告逐目标产物管线
@@ -159,6 +162,13 @@ impl ChannelPipeline for PlayablePipeline {
                     &artifact.binaries,
                 )
                 .map_err(|e| format!("写入试玩广告产物失败（{rel}）: {e}"))?;
+                // multi 形态自动附 zip（Mintegral 等平台 zip 上传；目录保留供
+                // 本地预览/检查，zip 是上传件）
+                let zip_rel = if kind == "multi" {
+                    Some(zip_package::write_target_zip(&p.out, id, &p.out.join(&rel))?)
+                } else {
+                    None
+                };
                 results.push(PlayableTargetResult {
                     id: id.clone(),
                     form: kind.to_string(),
@@ -168,6 +178,13 @@ impl ChannelPipeline for PlayablePipeline {
                         format!("{out_base_rel}/{rel}")
                     },
                     html_bytes: artifact.html_bytes,
+                    zip_rel: zip_rel.map(|z| {
+                        if out_base_rel.is_empty() {
+                            z
+                        } else {
+                            format!("{out_base_rel}/{z}")
+                        }
+                    }),
                 });
             }
         }
@@ -279,9 +296,9 @@ mod tests {
 
     use super::PlayablePipeline;
 
-    /// 多文件形态组装机制（当前注册表无 multi 可用目标，e2e 走不到该分支——
-    /// 以单测直接驱动 build_form 锁机制：入口页改键、单页模板不泄漏、
-    /// config/server/README 附带、场景落盘）。
+    /// 多文件形态组装机制（e2e playable_real_targets_mixed_forms 走 mintegral
+    /// 真实目标覆盖全链路；此处直接驱动 build_form 锁组装细节：入口页改键、
+    /// 单页模板不泄漏、config/server/README 附带、场景落盘）。
     #[test]
     fn multi_form_assembles_site() {
         let base_files = HashMap::from([

@@ -45,8 +45,12 @@ pub(in crate::build) const PLAYABLE_TARGETS: &[PlayableTarget] = &[
     PlayableTarget { id: "meta", form: TargetForm::Single, available: true },
     PlayableTarget { id: "google", form: TargetForm::Single, available: true },
     PlayableTarget { id: "mraid", form: TargetForm::Single, available: true },
-    PlayableTarget { id: "ironsource", form: TargetForm::Multi, available: false },
-    PlayableTarget { id: "mintegral", form: TargetForm::Multi, available: false },
+    // ironSource 并入 Unity Grow：官方当前 spec=单 HTML+MRAID 3.0（历史 DAPI
+    // postMessage 无公开官方文档），契约与 mraid 同族
+    PlayableTarget { id: "ironsource", form: TargetForm::Single, available: true },
+    // 官方双 API：CTA=window.install、结束上报=window.gameEnd；zip 路线走多文件
+    PlayableTarget { id: "mintegral", form: TargetForm::Multi, available: true },
+    // 官方开发者 spec 在 Partner Center 登录墙内，核到再解锁（核不到不动笔）
     PlayableTarget { id: "pangle", form: TargetForm::Single, available: false },
 ];
 
@@ -73,14 +77,16 @@ mod tests {
     fn registry_shape() {
         let ids: Vec<&str> = super::PLAYABLE_TARGETS.iter().map(|t| t.id).collect();
         assert_eq!(ids, ["meta", "google", "mraid", "ironsource", "mintegral", "pangle"]);
-        for t in &super::PLAYABLE_TARGETS[..3] {
-            assert!(t.available, "P0 三大通用族必须可用: {}", t.id);
+        // P0 三大通用族 + P2 核实过官方 spec 的 ironsource/mintegral 可用
+        for t in &super::PLAYABLE_TARGETS[..5] {
+            assert!(t.available, "已核实目标必须可用: {}", t.id);
         }
-        for t in &super::PLAYABLE_TARGETS[3..] {
+        for t in &super::PLAYABLE_TARGETS[5..] {
             assert!(!t.available, "占位目标必须不可用: {}", t.id);
         }
         assert_eq!(target_by_id("meta").unwrap().form, TargetForm::Single);
-        assert_eq!(target_by_id("ironsource").unwrap().form, TargetForm::Multi);
+        assert_eq!(target_by_id("ironsource").unwrap().form, TargetForm::Single);
+        assert_eq!(target_by_id("mintegral").unwrap().form, TargetForm::Multi);
         assert!(target_by_id("nope").is_none());
     }
 
@@ -89,7 +95,7 @@ mod tests {
     #[test]
     fn out_rel_and_kinds() {
         assert_eq!(target_out_rel("meta", "single"), "meta");
-        assert_eq!(target_out_rel("ironsource", "multi"), "ironsource");
+        assert_eq!(target_out_rel("mintegral", "multi"), "mintegral");
         assert_eq!(TargetForm::Both.kinds(), [Some("single"), Some("multi")]);
         assert_eq!(TargetForm::Single.kinds(), [Some("single"), None]);
         assert_eq!(TargetForm::Multi.kinds(), [None, Some("multi")]);

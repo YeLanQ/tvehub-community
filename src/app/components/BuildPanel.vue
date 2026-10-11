@@ -514,6 +514,9 @@ watch(projectScenes, (next, prev) => {
                   <span v-if="t.html_bytes > 0" :class="t.html_bytes > PLAYABLE_SIZE_BUDGET ? 'bp-warn' : 'bp-muted'">
                     {{ (t.html_bytes / 1024 / 1024).toFixed(2) }}MB{{ t.html_bytes > PLAYABLE_SIZE_BUDGET ? " · 超平台常见预算（5MB），建议开启发布模式压缩" : "" }}
                   </span>
+                  <span v-if="t.zip_rel" class="bp-muted">
+                    上传包 <code class="bp-outdir" :title="t.zip_rel">{{ t.zip_rel }}</code>
+                  </span>
                 </div>
               </template>
               <div

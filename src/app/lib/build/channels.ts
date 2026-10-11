@@ -70,7 +70,7 @@ function webLikeRuntimeOptions(configText: string | null): ChannelRuntimeOptions
 const WEB_CHANNEL: BuildChannel = {
   id: "web",
   label: "Web",
-  desc: "打包为可部署的静态网页（player 运行时 + 场景 + 资产）",
+  desc: "打包为可部署的静态网页（落 build/web/）",
   supported: true,
   runtimeOptions: webLikeRuntimeOptions,
   applyExportArtifacts: applyWebExportArtifacts,
@@ -86,7 +86,7 @@ const WEB_CHANNEL: BuildChannel = {
 const PLAYABLE_CHANNEL: BuildChannel = {
   id: "playable",
   label: "试玩广告",
-  desc: "按勾选的广告渠道导出试玩广告产物（Meta / Google / MRAID 等，落 build/playable/）",
+  desc: "按勾选的广告平台导出试玩产物（落 build/playable/）",
   supported: true,
   runtimeOptions: webLikeRuntimeOptions,
   applyExportArtifacts: applyPlayableExportArtifacts,
@@ -107,7 +107,7 @@ const PLAYABLE_CHANNEL: BuildChannel = {
 const WECHAT_CHANNEL: BuildChannel = {
   id: "wechat",
   label: "微信小游戏",
-  desc: "打包为微信小游戏工程（预构建运行时 + 数据全内联，导入开发者工具运行）",
+  desc: "打包为微信小游戏工程（落 build/wechat/）",
   supported: true,
   runtimeOptions: (configText) => ({
     // 物理引擎按后端随包（rapier/jolt/ammo CJS 预转换产物；真机 wasm 由桥接层

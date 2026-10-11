@@ -2280,10 +2280,10 @@ export interface UIApi {
  * 试玩广告宿主契约（playable 渠道产物可用；其他产物/预览全部安全空转）。
  * 用法：在结束卡（EndCard）的下载按钮点击处理里调 {@link PlayableAdApi.cta}，
  * 运行时自动映射到所在广告平台的宿主函数（mraid.open / FbPlayableAd /
- * ExitApi.exit），商店跳转由广告宿主接管。
+ * ExitApi.exit / window.install），商店跳转由广告宿主接管。
  */
 export interface PlayableAdApi {
-  /** 探测到的宿主平台："mraid" / "meta" / "google"；"web" = 非广告环境 */
+  /** 探测到的宿主平台："mraid" / "meta" / "google" / "mintegral"；"web" = 非广告环境 */
   readonly host: string;
   /**
    * 结束卡「下载/安装」按钮点击：映射到广告宿主的安装跳转；无宿主（web
@@ -2324,7 +2324,8 @@ export interface PlayableAdApi {
    * 生命周期事件打点上报：转发到所在平台宿主的上报通道，并在控制台留痕。
    * gameStart 在宿主落定后由运行时自动上报一次（无需手动调）；脚本在结束卡
    * 出现时上报 gameOver、重玩时上报 gameRestart；也接受自定义事件名 + 附加
-   * 数据（postMessage 族平台随适配器逐家映射协议）。
+   * 数据（平台映射随适配器：Mintegral 的 gameOver/gameEnd 转发 window.gameEnd，
+   * 其余平台当前无游戏事件 API 只留痕）。
    */
   report(event: string, data?: Record<string, unknown>): void;
 }

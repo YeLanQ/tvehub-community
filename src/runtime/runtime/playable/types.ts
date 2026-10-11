@@ -7,8 +7,10 @@
 // 与编辑器预览不写该键 → installPlayableAd 直接跳过，模块零开销休眠）。
 // ---------------------------------------------------------------------------
 
-/** 宿主平台 id（engine.playableAd.host / window.__tvePlayableAd.host 的取值） */
-export type PlayableHostId = "web" | "mraid" | "meta" | "google";
+/** 宿主平台 id（engine.playableAd.host / window.__tvePlayableAd.host 的取值）。
+ *  注：导出目标 ironsource（Unity Grow）官方 spec=MRAID 3.0，运行时探测落
+ *  "mraid"——目标是构建侧概念，宿主 id 只按运行时真实契约落名 */
+export type PlayableHostId = "web" | "mraid" | "meta" | "google" | "mintegral";
 
 /** 统一宿主适配器：一个广告平台（族）一份实现（adapters/） */
 export interface PlayableHost {
@@ -24,8 +26,8 @@ export interface PlayableHost {
   /**
    * 生命周期事件打点：转发到平台宿主的上报通道。内置事件名 gameStart /
    * gameOver / gameRestart（也接受自定义事件名 + 附加数据）。meta/google/
-   * mraid 平台无游戏事件 API——no-op（留痕在安装层统一做）；postMessage 族
-   * 适配器（P2：ironSource/Mintegral/Pangle）在此映射各自的消息协议。
+   * mraid 平台无游戏事件 API——no-op（留痕在安装层统一做）；mintegral 在此
+   * 映射官方 GameEnded API（report("gameOver"/"gameEnd") → window.gameEnd）。
    */
   report(event: string, data?: Record<string, unknown>): void;
 }

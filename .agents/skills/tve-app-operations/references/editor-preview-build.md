@@ -23,11 +23,13 @@
   （竖屏/横屏）、**分包加载**（启用后文件化二进制资产按体积分入 pkg-N 分包 +
   单个分包体积上限 1~4MB 缺省 2；game.js 启动前预加载全部分包，主包 4MB 限制
   的解法）、调试/发布互斥（同 Web 语义）。
-- 试玩广告渠道设置：**广告渠道目标勾选列表**（Meta/Google/MRAID 通用可勾选；
-  ironSource/Mintegral/Pangle 置灰「即将支持」；目标自带产物形态徽标 单页/多
+- 试玩广告渠道设置：**广告渠道目标勾选列表**（Meta/Google/MRAID/Unity Grow
+  单页与 Mintegral 多文件可勾选；Pangle 置灰「官方 spec 登录墙内未核实」；目标
+  自带产物形态徽标 单页/多
   文件/两者）→ 单页/多文件导出模板两槽（按勾选目标所需形态显示）、gzip（作用
   于单页内联）、页面标题、调试/发布互斥。**按勾选目标逐一产出**
-  `build/playable/<目标>/`（both 目标分 single/ multi/ 子目录）；结果区逐目标
+  `build/playable/<目标>/`（both 目标分 single/ multi/ 子目录；多文件目标自动
+  附上传包 `<目标>.zip`，结果区列「上传包」路径）；结果区逐目标
   列产物路径 + 单页 HTML 体积（超 5MB 预算黄色提示）。CDN 不可用（试玩禁外
   链）；产物 config 带 `playableAd/playableTargets`，脚本经
   `engine.playableAd.cta()` 对接宿主安装跳转（详见 tve-sdk-scripting）。

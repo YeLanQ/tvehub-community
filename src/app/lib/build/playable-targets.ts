@@ -47,22 +47,29 @@ export const PLAYABLE_TARGETS: PlayableTarget[] = [
   },
   {
     id: "ironsource",
-    label: "ironSource / Unity LevelPlay",
-    desc: "postMessage 桥；ZIP 上传（多文件）",
-    form: "multi",
-    available: false,
+    label: "Unity Grow（原 ironSource）",
+    // 官方当前 spec（docs.unity.com Grow / Playable asset specifications）：
+    // 单 HTML 全内联 ≤5MB + MRAID 3.0——历史的 DAPI postMessage 事件无公开
+    // 官方文档，运行时契约与 mraid 目标同族（探测落 mraid）
+    desc: "MRAID 3.0 契约（官方 spec 单 HTML 直传）",
+    form: "single",
+    available: true,
   },
   {
     id: "mintegral",
     label: "Mintegral",
-    desc: "playableBridge 桥；ZIP 上传（多文件）",
+    // 官方双 API（Unity Playworks 适配文档 + Mindworks 指南）：CTA=window.install、
+    // 结束上报=window.gameEnd；单 HTML 或 zip 均收——此处走多文件 zip 路线
+    desc: "window.install / gameEnd 桥；多文件打包 zip 上传",
     form: "multi",
-    available: false,
+    available: true,
   },
   {
     id: "pangle",
     label: "TikTok / 穿山甲 Pangle",
-    desc: "js-sdk 桥；单页 HTML",
+    // 官方开发者 spec 在 Pangle Partner Center 登录墙内，公开渠道核不到——
+    // 按 tve-playable-ads/extend-platform 规则「核不到官方页不动笔」保持占位
+    desc: "官方 spec 登录墙内未核实，核到再解锁",
     form: "single",
     available: false,
   },

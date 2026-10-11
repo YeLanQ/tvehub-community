@@ -6,8 +6,9 @@ engine.playableAd.host; // => "web"（非广告环境：编辑器预览 / 本机
 engine.playableAd.isViewable(); // => true
 
 // 结束卡（EndCard）「下载」按钮的点击处理里调用：
-// 运行时自动映射所在平台宿主（mraid.open / FbPlayableAd / ExitApi.exit），
-// 商店跳转由广告宿主接管；无宿主环境空转并在控制台提示，不抛错
+// 运行时自动映射所在平台宿主（mraid.open / FbPlayableAd / ExitApi.exit /
+// window.install），商店跳转由广告宿主接管；无宿主环境空转并在控制台提示，
+// 不抛错
 engine.playableAd.cta();
 
 // 订阅广告位可见性变化（mraid 广告位滚出屏幕等；返回解绑函数）

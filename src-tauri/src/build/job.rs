@@ -116,6 +116,9 @@ pub struct PlayableTargetResult {
     pub out_rel: String,
     /// 单页 HTML 字节数（multi 形态为 0）
     pub html_bytes: u64,
+    /// multi 形态自动打包的 zip（相对项目根 build/playable/<id>.zip；single 为 None）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zip_rel: Option<String>,
 }
 
 /// 构建结果（自描述；前端结果展示用）
