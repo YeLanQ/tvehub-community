@@ -130,10 +130,19 @@ export interface TimelineApi {
 
 export interface SelectionApi {
   selected: Ref<KeySel | null>;
+  /** 选中关键帧的实时数据（未选中/帧已不存在 = null；rev 失效） */
+  selectedKey: ComputedRef<AnimKey | null>;
+  /** 底部字段绑定值（未选中回退 0；字段随 selected 显隐） */
+  selectedTime: ComputedRef<number>;
+  selectedValue: ComputedRef<number>;
   pickKey: (prop: AnimProp, t: number) => void;
   deleteSelected: () => void;
   selectedInterp: Ref<AnimKeyInterp | "auto" | "">;
   onInterpChange: (e: Event) => void;
+  /** 二次编辑选中帧：改时间（钳时长、t 升序重排、选中跟随新时刻） */
+  onSelectedTimeChange: (v: number) => void;
+  /** 二次编辑选中帧：改值（自动切线保持自动，随新值自然重算） */
+  onSelectedValueChange: (v: number) => void;
   keyAt: (prop: AnimProp, t: number) => AnimKey | null;
   setSmooth: (prop: AnimProp, t: number) => void;
   /** 直接设插值（smooth 走 setSmooth；linear/step 清除切线） */

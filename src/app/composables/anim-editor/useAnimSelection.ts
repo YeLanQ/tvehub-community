@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
-// 选中关键帧与插值：选中态（通道键 + 时刻）、选中帧的插值下拉（自动态显示
-// 虚拟 "auto"）、删除，以及 dope 轨道 / 曲线视图共用的关键帧右键菜单
-// （插值切换 / 贝塞尔切线对称·断开·压平 / 删除）。
+// 选中关键帧与插值：选中态（通道键 + 时刻）、选中帧数据暴露与底部字段二次
+// 编辑（时间/值）、选中帧的插值下拉（自动态显示虚拟 "auto"）、删除，以及
+// dope 轨道 / 曲线视图共用的关键帧右键菜单（插值切换 / 贝塞尔切线对称·断开·
+// 压平 / 删除）。
 // ---------------------------------------------------------------------------
 import { computed, ref } from "vue";
 import {
@@ -21,6 +22,50 @@ export function useAnimSelection(ctx: AnimEditorCtx): SelectionApi {
 
   function pickKey(prop: AnimProp, t: number): void {
     selected.value = { prop, t };
+  }
+
+  /** 选中关键帧的实时数据（底部「时间/值」字段显示用；rev 失效） */
+  const selectedKey = computed<AnimKey | null>(() => {
+    void ctx.clip.rev.value;
+    const d = ctx.clip.doc.value;
+    const sel = selected.value;
+    if (!d || !sel) return null;
+    return (
+      d.curves.find((c) => c.prop === sel.prop)?.keys.find((k) => Math.abs(k.t - sel.t) <= 1e-4) ??
+      null
+    );
+  });
+
+  /** 字段绑定值：未选中回退 0（字段随 selected 显隐，回退值不可达） */
+  const selectedTime = computed(() => selectedKey.value?.t ?? 0);
+  const selectedValue = computed(() => selectedKey.value?.v ?? 0);
+
+  /** 提交后按播放头刷新视口姿势（scrub 同款；无目标节点时 no-op） */
+  function refreshPreview(): void {
+    ctx.preview.previewAt(ctx.playback.time.value);
+  }
+
+  /** 二次编辑选中帧时间：钳进 [0, 时长]、t 升序重排、选中跟随新时刻 */
+  function onSelectedTimeChange(v: number): void {
+    const d = ctx.clip.doc.value;
+    const sel = selected.value;
+    const k = selectedKey.value;
+    if (!d || !sel || !k) return;
+    k.t = Math.max(0, Math.min(d.duration, v));
+    const curve = d.curves.find((c) => c.prop === sel.prop);
+    curve?.keys.sort((a, b) => a.t - b.t);
+    selected.value = { prop: sel.prop, t: k.t };
+    ctx.clip.touch();
+    refreshPreview();
+  }
+
+  /** 二次编辑选中帧值：不固化自动切线（离散单次改动，自动 Catmull-Rom 随新值自然重算） */
+  function onSelectedValueChange(v: number): void {
+    const k = selectedKey.value;
+    if (!k) return;
+    k.v = v;
+    ctx.clip.touch();
+    refreshPreview();
   }
 
   function deleteSelected(): void {
@@ -174,8 +219,13 @@ export function useAnimSelection(ctx: AnimEditorCtx): SelectionApi {
 
   return {
     selected,
+    selectedKey,
+    selectedTime,
+    selectedValue,
     pickKey,
     deleteSelected,
+    onSelectedTimeChange,
+    onSelectedValueChange,
     selectedInterp,
     onInterpChange,
     keyAt,

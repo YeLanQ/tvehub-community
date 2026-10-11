@@ -54,7 +54,17 @@ const {
     curveGridTicks,
     snapEnabled,
   },
-  selection: { selected, deleteSelected, selectedInterp, onInterpChange, onKeyMenu },
+  selection: {
+    selected,
+    selectedTime,
+    selectedValue,
+    deleteSelected,
+    selectedInterp,
+    onInterpChange,
+    onSelectedTimeChange,
+    onSelectedValueChange,
+    onKeyMenu,
+  },
   curve: {
     curveProp,
     curveSvgEl,
@@ -335,9 +345,31 @@ function onExitEdit(): void {
         </div>
       </div>
 
-      <!-- 关键帧操作条（两种视图共用：插值下拉 + 删除） -->
+      <!-- 关键帧操作条（两种视图共用：选中帧 通道/时间/值 + 插值下拉 + 删除）。
+           字段常驻不条件渲染：选中/取消时行高与 DOM 恒定，避免底栏跳变牵动时间轴区 -->
       <div class="anim-bottom">
         <div class="anim-keyops">
+          <span class="sel-ch mono" :title="selected ? fullPathOf(selected.prop) : '未选中关键帧'">
+            {{ selected ? pathLabel(selected.prop) : "—" }}
+          </span>
+          <label class="anim-field" title="选中关键帧时间（秒；钳进剪辑时长，改后按 t 升序重排）">时间
+            <NumberField
+              :model-value="selectedTime"
+              :step="0.05"
+              :min="0"
+              :max="doc.duration"
+              :disabled="!selected"
+              @commit="onSelectedTimeChange"
+            />
+          </label>
+          <label class="anim-field" title="选中关键帧属性值（拖动调节 Shift 精细 / 点击输入）">值
+            <NumberField
+              :model-value="selectedValue"
+              :step="0.1"
+              :disabled="!selected"
+              @commit="onSelectedValueChange"
+            />
+          </label>
           <select
             class="interp-pick"
             :value="selectedInterp"

@@ -147,6 +147,9 @@
       animation: anim-rec-blink 1s infinite;
     }
   }
+
+  /* 「删除 K」「K 全部」等多字按钮在窄行内不被挤压折行 */
+  white-space: nowrap;
 }
 
 @keyframes anim-rec-blink {
@@ -470,8 +473,32 @@
   gap: 8px;
   padding: 3px 8px;
 
+  /* 选中关键帧的通道名（层级路径；超长省略）。未选中显示占位 "—" */
+  .sel-ch {
+    flex: none;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  /* 选中帧的时间/值字段：与相邻控件统一 22px 高、固定宽不参与挤压，
+     行内所有控件等高 → 选中/取消选中时底栏行高恒定不跳变 */
+  .anim-field {
+    flex: none;
+
+    .nf-input {
+      width: 64px;
+      height: 22px;
+      font-size: 11px;
+    }
+  }
+
   /* 选中关键帧的插值下拉（未选中时禁用显示占位项） */
   .interp-pick {
+    flex: none;
     height: 22px;
     font-size: 10px;
     color: var(--text);
@@ -484,6 +511,11 @@
       opacity: 0.4;
       cursor: not-allowed;
     }
+  }
+
+  /* 删除 K 等按钮：不挤压折行 */
+  .anim-btn {
+    flex: none;
   }
 
   .anim-hint {
