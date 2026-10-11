@@ -1,6 +1,6 @@
 ---
 name: tve-agent-autonomy
-description: 在 TvE Hub 仓库自主工作的 Agent 决策框架：任务类型路由到对应技能、行动边界三区（自动执行/需用户确认/禁止）、证据与验证规则（关联影响先行、门禁说话、负向验证）、停止升级条件与任务剧本（修 bug/加功能/文档漂移/只验证）。凡 Agent 要自主决策"接下来做什么、能不能直接做、何时停下问人"，或拿到一个模糊任务要拆解，一律先用本技能。
+description: 在 TvE Hub 仓库自主工作的 Agent 决策框架：任务类型路由到对应技能、行动边界三区（自动执行/需用户确认/禁止）、证据与验证规则（关联影响先行、门禁说话含按改动面的门禁清单、负向验证）、停止升级条件与任务剧本（修 bug/加功能/文档漂移/只验证/质量检测修复）。凡 Agent 要自主决策"接下来做什么、能不能直接做、何时停下问人"，或拿到一个模糊任务要拆解，一律先用本技能。
 ---
 
 # 自我决策 Agent 设计（本仓库的自主工作框架）
@@ -16,6 +16,7 @@ description: 在 TvE Hub 仓库自主工作的 Agent 决策框架：任务类型
 | 调后端能力/读写资产场景/派发命令 | tve-api-usage | tve-app-operations（操作语义） |
 | 写代码改代码（组件/引擎/脚本） | tve-sdk-scripting（tve 脚本）或 tve-engine-interfaces（引擎接口） | tve-unit-testing（补测试） |
 | 写测试/调阈值/门禁拦截 | tve-unit-testing | tve-local-ci |
+| 代码质量/漏洞/性能/UI 质量检测与修复（audit 出项分诊） | tve-local-ci（references/audit-triage.md 配方） | tve-agent-autonomy（边界与验证） |
 | 试玩广告平台适配 / playable 渠道导出 / 结束卡 CTA 打点脚本 | tve-playable-ads | tve-sdk-scripting（脚本模板） |
 | 用户问"怎么操作"（三窗口） | tve-app-operations | — |
 | 改完代码同步文档 / skills:check 红 | tve-self-evolution | tve-local-ci |
@@ -40,8 +41,13 @@ description: 在 TvE Hub 仓库自主工作的 Agent 决策框架：任务类型
    负面影响，而不是只看测试通过——数据流/持久化/跨窗口同步/渲染路径/既有
    调用方都算关联面；测试只覆盖写到的路径，全绿不代表没有破坏（本规则来自
    真实事故：一段索引清理逻辑测试全绿，却在运行环境里误删了用户全部会话）。
-2. **门禁说话**：改完必须 `pnpm ci:local`（至少 `--only` 受影响步）；"应该没问题"
-   不算验证。
+2. **门禁说话**：改完必须过门禁清单（按改动面取交集，"应该没问题"不算验证）：
+   - 任何代码/文档改动 → `pnpm ci:local`（最低整链；快速迭代 `--only` 受影响步，
+     输出注明不完整）；
+   - 改了 `.scss` / `<style>` → 加跑 `pnpm exec vite build`（ci:local 不编译 SCSS）；
+   - 做了质量/漏洞/性能修复批 → 加跑 `pnpm audit:scan` 复扫，对比
+     `reports/audit/audit-report.md` 分级统计：修复类别必须下降、不得出现新 rule 类别；
+   - 改了 API/命令/引擎接口 → 同批走 `tve-self-evolution` drift-map + `pnpm skills:check`。
 3. **引用可点检**：文档里写 `文件:行号` 就要经得起 skills:check 与人工抽查；
    探索得来的行号，落笔前抽验（本组曾修掉 1 处语义不符的引用）。
 4. **负向验证**：改阈值/改门禁，先证明它"会拦"再证明它"放过"。
@@ -58,4 +64,4 @@ description: 在 TvE Hub 仓库自主工作的 Agent 决策框架：任务类型
 ## 路由
 
 - 行动边界细则（每类操作的判定标准）：references/decision-matrix.md
-- 四类任务剧本（修 bug / 加功能 / 文档漂移 / 只验证）：references/task-playbooks.md
+- 五类任务剧本（修 bug / 加功能 / 文档漂移 / 只验证 / 质量检测修复）：references/task-playbooks.md

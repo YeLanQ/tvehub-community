@@ -67,7 +67,7 @@ function checkCitation(file, raw, lineStr) {
 }
 
 const PATH_RE =
-  /(?:^|[\s(`'"，。（])((?:src|scripts|tests|public)\/[A-Za-z0-9_\-./]+\.(?:ts|tsx|vue|mjs|js|json|md|scss))(?::(\d+))?/g;
+  /(?:^|[\s(`'"，。（])((?:src|scripts|tests|public)\/[A-Za-z0-9_\-./]+\.(?:ts|tsx|vue|mjs|json|js|md|scss))(?::(\d+))?/g;
 
 const mdFiles = existsSync(SKILLS_DIR) ? walk(SKILLS_DIR) : [];
 if (mdFiles.length === 0) fail(SKILLS_DIR, "未找到任何技能文档（.agents/skills 为空？）");

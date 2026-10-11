@@ -13,6 +13,7 @@
 | `src/runtime/**` 模块增删导出 | tve-engine-interfaces/player-runtime.md 模块清单 + smoke-runtime-modules 断言 | 清单行 + 套件断言**同步改**（这是契约不是回归） |
 | 帧循环顺序（player.mjs） | player-runtime.md 帧循环段 | 顺序图重画 + smoke-script-hooks 过一遍 |
 | `vitest.config.ts` 阈值/口径 | tve-unit-testing/coverage-buckets.md 分桶表 | 表格 + **负向验证**（临时设 100 确认会拦）记录 |
+| `scripts/audit/**` 规则增删/阈值/口径变更 | tve-local-ci/references/audit-triage.md 分诊总表 + gate-chains.md 链路描述 | 分诊表 rule 行增删改（真伪甄别/修法/保留条件）；rule 改名时旧名残留排查 |
 | `package.json` scripts / 门禁链 | tve-unit-testing/gates.md + tve-local-ci/gate-chains.md | 两处链路图同步；ci-local STEPS 表若动，同步 gate-chains |
 | 版本/CHANGELOG 工具链（sync-version.mjs / changelog-core.mjs / gen-changelog.mjs） | tve-release-versioning | 命令族表、bump 语义、锚点正则与"落锚三步"剧本核对；`文件:行号` 引用回填 |
 | 检查器分区/工具栏/右键菜单/快捷键 | tve-app-operations 对应单元操作面 | 操作表增删；入口 `文件:行号` 回填 |

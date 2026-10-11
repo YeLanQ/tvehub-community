@@ -1,6 +1,6 @@
 ---
 name: tve-local-ci
-description: TvE Hub 本地自动 CI：pnpm ci:local 一键门禁链（技能文档校验→类型检查→分层门禁→质量+安全统一扫描→单元测试→P0 核心回归），失败分诊手册与报告归档。凡提交前自检、发版前全量验证、门禁红了不知先修哪个、或要确认改动没破坏任何链路，一律先跑本技能定义的链。
+description: TvE Hub 本地自动 CI：pnpm ci:local 一键门禁链（技能文档校验→类型检查→分层门禁→质量+安全统一扫描→单元测试→P0 核心回归），失败分诊手册、audit 出项（质量/漏洞/性能/UI/耦合）的分诊修复配方与报告归档。凡提交前自检、发版前全量验证、门禁红了不知先修哪个、改文件后要跑门禁检测、或要做代码质量/漏洞/性能检测与修复，一律先跑本技能定义的链、查本技能的配方。
 ---
 
 # 本地自动 CI 系统
@@ -49,6 +49,9 @@ description: TvE Hub 本地自动 CI：pnpm ci:local 一键门禁链（技能文
 
 - 分步细则（阈值/分层规则/smoke 协议）：references/gate-chains.md
 - 失败分诊（哪步红 → 查什么 → 怎么修）：references/ci-runbook.md
+- **audit 出项的分诊与修复配方**（每类 rule 的真伪甄别/修法/设计内保留条件、
+  性能并行装载形态、UI 令牌专项、耦合分析口径、拆分优先级、修复后门禁清单）：
+  references/audit-triage.md——质量/漏洞/性能/UI 检测修复任务的主操作面
 - 报告归档与趋势（--full 产物）：`pnpm test:all` 同链路，见 `tve-unit-testing`
   技能 references/gates.md
 
