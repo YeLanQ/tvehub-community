@@ -279,6 +279,7 @@ impl ChannelPipeline for WechatPipeline {
                 gzip: false,
                 cdn: false,
                 message,
+                targets: Vec::new(),
             },
         ))
     }

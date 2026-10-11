@@ -12,6 +12,8 @@ import {
   type ChannelRuntimeOptions,
 } from "../web-preview-runtime";
 import type { BuildChannelId, BuildOptions } from "./options";
+import { applyPlayableExportArtifacts } from "./playable-artifacts";
+import { PLAYABLE_TARGETS } from "./playable-targets";
 import { applyWebExportArtifacts } from "./web-artifacts";
 
 /** 渠道导出期工件注入：渠道独有的 files 加工（web = 导出模板注入入口页；
@@ -38,7 +40,7 @@ export interface BuildChannel {
     applies: { title: boolean; singlePage: boolean; gzip: boolean; cdn: boolean };
     defaults: { title: string; singlePage: boolean; gzip: boolean; cdn: boolean; gzipBase: string; cdnBase: string };
   };
-  /** 渠道专属 IPC 字段（微信 appid/方向；web 无） */
+  /** 渠道专属 IPC 字段（微信 appid/方向；playable 目标列表；web 无） */
   extraIpc(opts: BuildOptions): Partial<BuildExportArgs>;
 }
 
@@ -51,13 +53,9 @@ const NO_IPC_DEFAULTS = {
   cdnBase: "",
 };
 
-/** web 渠道：全量选项用户可控（singlePage 由模板解析在 applyExportArtifacts 内定） */
-const WEB_CHANNEL: BuildChannel = {
-  id: "web",
-  label: "Web",
-  desc: "打包为可部署的静态网页（player 运行时 + 场景 + 资产）",
-  supported: true,
-  runtimeOptions: (configText) => ({
+/** web / playable 共用的运行时按需开关（同一套判据：物理后端/WebGPU/Draco/Basis） */
+function webLikeRuntimeOptions(configText: string | null): ChannelRuntimeOptions {
+  return {
     includePhysics: configUsesPhysics(configText),
     physicsBackend: configPhysicsBackend(configText) ?? undefined,
     // 渲染后端为 WebGPU/自动时必须随产物带上 WebGPU 运行时（three.webgpu 构建
@@ -65,13 +63,44 @@ const WEB_CHANNEL: BuildChannel = {
     includeWebgpu: configUsesWebgpu(configText),
     includeDracoDecoder: configUsesDracoCompression(configText),
     includeBasisDecoder: configUsesTextureCompression(configText),
-  }),
+  };
+}
+
+/** web 渠道：全量选项用户可控（singlePage 由模板解析在 applyExportArtifacts 内定） */
+const WEB_CHANNEL: BuildChannel = {
+  id: "web",
+  label: "Web",
+  desc: "打包为可部署的静态网页（player 运行时 + 场景 + 资产）",
+  supported: true,
+  runtimeOptions: webLikeRuntimeOptions,
   applyExportArtifacts: applyWebExportArtifacts,
   ipc: {
     applies: { title: true, singlePage: true, gzip: true, cdn: true },
     defaults: NO_IPC_DEFAULTS,
   },
   extraIpc: () => ({}),
+};
+
+/** playable 渠道：试玩广告按目标勾选导出（build/playable/<目标>/；单页/多文件
+ *  形态由目标注册表决定——singlePage 对该渠道无意义，Rust 按目标形态组装） */
+const PLAYABLE_CHANNEL: BuildChannel = {
+  id: "playable",
+  label: "试玩广告",
+  desc: "按勾选的广告渠道导出试玩广告产物（Meta / Google / MRAID 等，落 build/playable/）",
+  supported: true,
+  runtimeOptions: webLikeRuntimeOptions,
+  applyExportArtifacts: applyPlayableExportArtifacts,
+  ipc: {
+    // title 进载荷（入口页 <title>）；singlePage/cdn 对该渠道无意义（形态由
+    // 目标决定、CDN 强制关——试玩禁外链）；gzip 作用于单页形态（内联压缩）
+    applies: { title: true, singlePage: false, gzip: true, cdn: false },
+    defaults: NO_IPC_DEFAULTS,
+  },
+  extraIpc: (opts) => ({
+    playableTargets: PLAYABLE_TARGETS.filter(
+      (t) => t.available && opts.playableTargets?.includes(t.id),
+    ).map((t) => t.id),
+  }),
 };
 
 /** 微信渠道：形态/地址类选项不适用（数据全内联），按 defaults 收敛 */
@@ -106,7 +135,7 @@ const WECHAT_CHANNEL: BuildChannel = {
   }),
 };
 
-export const BUILD_CHANNELS: BuildChannel[] = [WEB_CHANNEL, WECHAT_CHANNEL];
+export const BUILD_CHANNELS: BuildChannel[] = [WEB_CHANNEL, WECHAT_CHANNEL, PLAYABLE_CHANNEL];
 
 /** 取渠道 adapter（未知渠道抛错；前端渠道 union 单源于 BuildChannelId） */
 export function getBuildChannel(id: BuildChannelId): BuildChannel {

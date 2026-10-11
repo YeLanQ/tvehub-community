@@ -18,7 +18,8 @@ export async function loadBuildPrefs(root: string | null): Promise<BuildPrefs | 
     const text = await api.readText(root, BUILD_CONFIG_REL);
     const cfg = JSON.parse(text) as Record<string, unknown>;
     return {
-      channel: cfg.channel === "wechat" ? "wechat" : "web",
+      channel:
+        cfg.channel === "wechat" ? "wechat" : cfg.channel === "playable" ? "playable" : "web",
       scenes: Array.isArray(cfg.scenes) ? cfg.scenes.filter((s) => typeof s === "string") : [],
       mainScene: typeof cfg.mainScene === "string" ? cfg.mainScene : "",
       title: typeof cfg.title === "string" ? cfg.title : "",
@@ -40,6 +41,10 @@ export async function loadBuildPrefs(root: string | null): Promise<BuildPrefs | 
         typeof cfg.wechatSubpackageSize === "number" && Number.isFinite(cfg.wechatSubpackageSize)
           ? Math.min(4, Math.max(1, Math.round(cfg.wechatSubpackageSize)))
           : 2,
+      playableTargets: Array.isArray(cfg.playableTargets)
+        ? cfg.playableTargets.filter((s) => typeof s === "string")
+        : [],
+      playableTemplates: readPlayableTemplates(cfg.playableTemplates),
     };
   } catch {
     return null;
@@ -66,10 +71,21 @@ export async function saveBuildPrefs(root: string | null, prefs: BuildPrefs): Pr
     wechatSubpackages: prefs.wechatSubpackages === true,
     wechatDiag: prefs.wechatDiag === true,
     wechatWorker: prefs.wechatWorker === true,
-    wechatSubpackageSize:
-      typeof prefs.wechatSubpackageSize === "number" && Number.isFinite(prefs.wechatSubpackageSize)
-        ? Math.min(4, Math.max(1, Math.round(prefs.wechatSubpackageSize)))
-        : 2,
-  };
+      wechatSubpackageSize:
+        typeof prefs.wechatSubpackageSize === "number" && Number.isFinite(prefs.wechatSubpackageSize)
+          ? Math.min(4, Math.max(1, Math.round(prefs.wechatSubpackageSize)))
+          : 2,
+      playableTargets: prefs.playableTargets ?? [],
+      playableTemplates: prefs.playableTemplates ?? {},
+    };
   await api.writeText(root, BUILD_CONFIG_REL, JSON.stringify(next, null, 2));
+}
+
+/** 试玩广告模板两槽（单页/多文件）读取归一化：非字符串槽位丢弃 */
+function readPlayableTemplates(value: unknown): { single?: string; multi?: string } {
+  const v = (value ?? {}) as { single?: unknown; multi?: unknown };
+  return {
+    single: typeof v.single === "string" ? v.single : undefined,
+    multi: typeof v.multi === "string" ? v.multi : undefined,
+  };
 }

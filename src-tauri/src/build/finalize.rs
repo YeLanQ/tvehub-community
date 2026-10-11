@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::job::{BuildResult, JobCtx, PackedScene, Prepared};
+use super::job::{BuildResult, JobCtx, PackedScene, PlayableTargetResult, Prepared};
 use super::pipeline::progress;
 
 /// 读取项目配置 project.config.json。缺失或解析失败降级为 Value::Null：
@@ -58,6 +58,8 @@ pub(super) struct ResultDraft {
     pub gzip: bool,
     pub cdn: bool,
     pub message: String,
+    /// playable 渠道：逐目标产物清单（web/wechat 为空列表）
+    pub targets: Vec<PlayableTargetResult>,
 }
 
 /// 组装最终 BuildResult
@@ -77,6 +79,7 @@ pub(super) fn finish_result(prepared: &Prepared, draft: ResultDraft) -> BuildRes
         assets_packed: draft.assets_packed,
         missing: draft.missing,
         message: draft.message,
+        targets: draft.targets,
     }
 }
 

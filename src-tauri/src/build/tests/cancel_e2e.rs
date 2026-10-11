@@ -49,6 +49,7 @@ fn web_job(root: &std::path::Path) -> BuildJob {
         wechat_subpackages: None,
         wechat_subpackage_size: None,
         wechat_diag: None,
+        playable_targets: Vec::new(),
     }
 }
 

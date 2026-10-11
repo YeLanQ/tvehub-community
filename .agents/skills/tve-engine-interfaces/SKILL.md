@@ -51,7 +51,7 @@ description: TvE Hub 引擎侧全部接口设计：编辑器引擎（EditorEngin
   Rust `Graph::from_root_doc` 四处同约定）；`childIds` 冗余字段被忽略。
 - **SceneClient 写通道**：乐观应用 → 提交后端 → scene:changed 幂等回填；
   拖拽期间只改镜像、松手一次性提交（一次拖动 = 一个撤销步骤）。
-- **tve SDK 版本** 1.3.0（tve.d.ts ↔ public/engine/core/tve.mjs 镜像同步）；
+- **tve SDK 版本** 1.4.0（tve.d.ts ↔ public/engine/core/tve.mjs 镜像同步）；engine.playableAd = 试玩广告宿主契约（playable 渠道产物）；
   API 文档 `public/docs/sdk/api.md` 由 `pnpm gen:api-docs` 自动生成，勿手改。
 - **SCRIPT_NODE_BASE 表**（engine/nodeOps.ts）：新增可创建节点类型漏登记会编译报错。
 - **编辑器↔播放共享单源**（「共享纯逻辑 + 各自适配」边界）：地形全套算法

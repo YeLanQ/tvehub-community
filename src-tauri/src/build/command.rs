@@ -34,6 +34,8 @@ pub async fn build_export(
     wechat_subpackages: Option<bool>,
     wechat_subpackage_size: Option<f64>,
     wechat_diag: Option<bool>,
+    // playable 渠道专属：勾选的试玩广告目标 id 列表（其他渠道恒空）
+    playable_targets: Option<Vec<String>>,
 ) -> Result<BuildResult, String> {
     // 注册到任务管理器：支持取消 + 进度广播 + 多项目隔离
     let handle = state.register(&app, "export", Some(&root), crate::task::Priority::Normal);
@@ -66,6 +68,7 @@ pub async fn build_export(
                 wechat_subpackages,
                 wechat_subpackage_size,
                 wechat_diag,
+                playable_targets: playable_targets.unwrap_or_default(),
             },
             &ctx,
         );

@@ -5,7 +5,7 @@
 // （channels.ts 的 ipc.applies/defaults）决定进入 IPC 载荷的形态。
 
 /** 构建渠道 id（与 Rust BuildJob.channel / manifest.mjs 清单 id 同一口径） */
-export type BuildChannelId = "web" | "wechat";
+export type BuildChannelId = "web" | "wechat" | "playable";
 
 /** 产物内单场景条目（与 Rust BuildResult.scenes 对应） */
 export interface PackedScene {
@@ -55,4 +55,11 @@ export interface BuildOptions {
   /** 微信多线程加速（Worker）：物理/动画在独立线程运行（实验性——微信多线程
    *  设备适配性/普及率不足，缺省关闭 = 全主线程，行为跨设备一致） */
   wechatWorker?: boolean;
+  /** 试玩广告目标 id 列表（playable 渠道；元素 = PLAYABLE_TARGETS 注册表 id，
+   *  仅可用项；缺省空 = 未勾选，preflight 拦截） */
+  playableTargets?: string[];
+  /** 试玩广告渠道的导出模板（单页/多文件各一，按勾选目标所需形态分别消费；
+   *  与 web 渠道的 templates 分开持久化——playable 允许两形态并存，web 单选
+   *  互斥，共用一份会互相打架） */
+  playableTemplates?: { single?: string; multi?: string };
 }

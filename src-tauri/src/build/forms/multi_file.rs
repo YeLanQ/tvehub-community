@@ -80,7 +80,7 @@ fn rewrite_runtime_three_imports(files: &mut HashMap<String, String>, remap: &Ha
 /// 多文件组装：config.json 落盘、附带零依赖静态服务器与说明；gzip 模式把
 /// 场景/资产打进 assets.gzip（运行时经 fetch 拦截读取）；Three CDN 模式改写
 /// 运行时 three import 为 CDN 绝对 URL（import map 拦截不了相对说明符）。
-pub(super) fn assemble_multi_file(
+pub(in crate::build) fn assemble_multi_file(
     files: &mut HashMap<String, String>,
     binaries: &mut HashMap<String, Vec<u8>>,
     entries: &[(String, Vec<u8>)],

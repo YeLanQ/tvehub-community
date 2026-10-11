@@ -48,6 +48,9 @@ pub struct BuildJob {
     /// game.js 启动即写开关，不勾则启动即清键——勾选框恒为权威态，设备
     /// storage 残留自愈）
     pub wechat_diag: Option<bool>,
+    /// playable 渠道：勾选的试玩广告目标 id 列表（其他渠道恒空；去重与注册表
+    /// 校验在 playable 管线 resolve/preflight）
+    pub playable_targets: Vec<String>,
 }
 
 /// 任务运行期上下文：取消检查与进度上报（命令层注入，单元测试传默认值）
@@ -102,6 +105,19 @@ pub struct PackedScene {
     pub file: String,
 }
 
+/// playable 渠道逐目标产物（前端结果展示用；web/wechat 渠道为空列表）
+#[derive(Serialize, Clone, Debug)]
+pub struct PlayableTargetResult {
+    /// 目标 id（注册表 channels/playable/targets.rs；TS 镜像 playable-targets.ts）
+    pub id: String,
+    /// 产物形态："single" / "multi"
+    pub form: String,
+    /// 相对项目根的产物目录（build/playable/<id>[/single|/multi]）
+    pub out_rel: String,
+    /// 单页 HTML 字节数（multi 形态为 0）
+    pub html_bytes: u64,
+}
+
 /// 构建结果（自描述；前端结果展示用）
 #[derive(Serialize, Debug)]
 pub struct BuildResult {
@@ -126,4 +142,6 @@ pub struct BuildResult {
     pub assets_packed: usize,
     pub missing: Vec<String>,
     pub message: String,
+    /// playable 渠道：逐目标产物清单（web/wechat 渠道为空列表）
+    pub targets: Vec<PlayableTargetResult>,
 }

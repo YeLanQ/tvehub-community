@@ -42,6 +42,7 @@ import { configureSkyOrientation } from "../engine/runtime/sky.mjs";
 import { base64ToBytes, gunzip, installAssetShim, parseArchive } from "../engine/runtime/pak.mjs";
 import { resourceLoader } from "../engine/runtime/resource.mjs";
 import { AssetBundle } from "../engine/runtime/asset-bundle.mjs";
+import { installPlayableAd } from "../engine/runtime/playable/index.mjs";
 
 const app = document.getElementById("app");
 
@@ -170,6 +171,11 @@ async function main() {
 
   // 发布构建（debug=false）关闭日志转发（编辑器内嵌预览默认转发）
   if (cfg.debug === false) setLogForwarding(false);
+
+  // 试玩广告接口层（playable 渠道产物 config.playableAd=true 激活；其他渠道
+  // 零开销休眠）。宿主探测异步落定（mraid ready 等待不阻塞启动），可见性门
+  // 接入下方帧循环（广告位不可见即暂停整帧）
+  const playableAd = installPlayableAd(cfg);
 
   // 渲染后端（项目设置 renderer）在建场景树之前确定：粒子在场景树构建时即创建
   // 发射器，其材质实现是后端相关的（GLSL / TSL 节点材质）。渲染器挂载到舞台
@@ -860,8 +866,23 @@ async function main() {
   let shadowFrame = shadowUpdateInterval; // 首帧即重画（++ 后超过 interval）
   let pageHidden = document.hidden;
   let viewVisible = true;
+  // 试玩广告位可见性（playable 渠道；mraid viewableChange 驱动，非广告环境恒 true）
+  let playableVisible = true;
   let rafPending = false;
   let resumePending = true; // 首帧也走恢复路径（丢弃首帧前的时间间隔）
+  if (playableAd) {
+    playableVisible = playableAd.surface.isViewable();
+    playableAd.surface.onViewableChange((v) => {
+      playableVisible = v;
+      if (!v) resumePending = true;
+      scheduleFrame();
+    });
+    // 宿主探测落定（mraid ready 等待结束）后回读一次初始可见性
+    playableAd.ready.then(() => {
+      playableVisible = playableAd.surface.isViewable();
+      scheduleFrame();
+    });
+  }
   // —— 帧率上限（Bresenham 数帧累积器）——
   // 启动期测定显示器刷新率，按 cap/hz 的比例给每帧配额、累积到 1 渲染一帧。
   // 数帧不数时间：对 rAF 时间戳抖动完全免疫；比例配额在任意刷新率上精确锁到
@@ -890,7 +911,7 @@ async function main() {
     ).observe(document.documentElement);
   }
   function scheduleFrame() {
-    if (rafPending || pageHidden || !viewVisible) return;
+    if (rafPending || pageHidden || !viewVisible || !playableVisible) return;
     rafPending = true;
     requestAnimationFrame(frame);
   }

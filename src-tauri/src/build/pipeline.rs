@@ -42,6 +42,7 @@ pub fn channel_pipeline(channel: &str) -> Result<Box<dyn ChannelPipeline>, Strin
     match channel {
         "web" => Ok(Box::new(super::channels::web::WebPipeline)),
         "wechat" => Ok(Box::new(super::channels::wechat::WechatPipeline)),
+        "playable" => Ok(Box::new(super::channels::playable::PlayablePipeline)),
         other => Err(format!("构建渠道 '{other}' 暂未支持")),
     }
 }

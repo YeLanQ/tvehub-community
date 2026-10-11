@@ -80,6 +80,7 @@ fn wechat_job(root: &std::path::Path, files: HashMap<String, String>) -> BuildJo
         wechat_subpackages: None,
         wechat_subpackage_size: None,
         wechat_diag: None,
+        playable_targets: Vec::new(),
     }
 }
 
@@ -232,6 +233,7 @@ fn wechat_diag_switch_baked_into_entry() {
     // 勾选（无分包形态）
     let job = BuildJob {
         wechat_diag: Some(true),
+        playable_targets: Vec::new(),
         ..wechat_job(&root, wechat_files())
     };
     let result = run_build(job, &JobCtx::default())
@@ -261,6 +263,7 @@ fn wechat_diag_switch_baked_into_entry() {
     .unwrap();
     let job = BuildJob {
         wechat_diag: Some(true),
+        playable_targets: Vec::new(),
         wechat_subpackages: Some(true),
         wechat_subpackage_size: Some(1.0),
         ..wechat_job(&root, wechat_files())
@@ -561,6 +564,7 @@ fn wechat_subpackage_split() {
         wechat_subpackages: Some(true),
         wechat_subpackage_size: Some(1.0),
         wechat_diag: None,
+        playable_targets: Vec::new(),
         ..wechat_job(&root, wechat_files())
     };
     let result = run_build(job, &JobCtx::default())
@@ -640,6 +644,7 @@ fn wechat_resolve_normalizes_subpackage_options() {
         wechat_subpackages: Some(true),
         wechat_subpackage_size: Some(9.6),
         wechat_diag: None,
+        playable_targets: Vec::new(),
         ..wechat_job(&root, wechat_files())
     };
     match WechatPipeline.resolve(&job) {

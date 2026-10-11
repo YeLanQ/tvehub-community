@@ -64,6 +64,7 @@ export const b = T ? 2 : 0;
             wechat_subpackages: None,
             wechat_subpackage_size: None,
         wechat_diag: None,
+        playable_targets: Vec::new(),
             },
             &JobCtx::default(),
         )

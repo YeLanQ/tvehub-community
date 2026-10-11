@@ -16,10 +16,20 @@ export {
 export {
   BUILTIN_EXPORT_TEMPLATES,
   defaultExportTemplateId,
+  defaultPlayableTemplateId,
   fetchExportTemplateHtml,
   loadExportTemplates,
   resolveExportTemplate,
   type ExportTemplateInfo,
 } from "./web-artifacts";
+export {
+  PLAYABLE_TARGETS,
+  neededForms,
+  playableTargetById,
+  targetOutRel,
+  type PlayableTarget,
+  type PlayableTargetForm,
+} from "./playable-targets";
+export { applyPlayableExportArtifacts } from "./playable-artifacts";
 export { collectExportFiles, readProjectConfigText, type CollectOptions } from "./collect";
 export { openBuildDir, runBuild } from "./run";

@@ -196,24 +196,33 @@ function scanWechat() {
   };
 }
 
+/** playable 渠道清单：与 web 完全同一份运行时文件（playable 渠道 = web 运行时
+ *  + 试玩广告接口层，产物由 Rust playable 管线按目标形态组装）——直接复用
+ *  scanWeb 的扫描结果，仅 id 不同（id 参与前端 runtime-supply 的渠道寻址）。 */
+function scanPlayable() {
+  return { ...scanWeb(), id: "playable" };
+}
+
 /** 生成 src/generated/channel-runtimes.ts，返回各渠道清单条数 */
 export function generateChannelRuntimes() {
   const web = scanWeb();
   const wechat = scanWechat();
+  const playable = scanPlayable();
   const content =
     `// 由 runtime/scripts/manifest.mjs 自动生成（vite 启动/构建与 pnpm build\n` +
-    `// 时重建；请勿手动编辑。双渠道运行时清单统一事实源）\n` +
+    `// 时重建；请勿手动编辑。三渠道运行时清单统一事实源）\n` +
     `export interface ChannelRuntimeFile { key: string; rel: string; url: string; }\n` +
-    `export interface ChannelRuntimeSpec { id: "web" | "wechat"; base: ChannelRuntimeFile[]; groups: Record<string, ChannelRuntimeFile[]>; }\n` +
-    `export const CHANNEL_RUNTIMES: Record<"web" | "wechat", ChannelRuntimeSpec> = ${JSON.stringify({ web, wechat }, null, 2)};\n`;
+    `export interface ChannelRuntimeSpec { id: "web" | "wechat" | "playable"; base: ChannelRuntimeFile[]; groups: Record<string, ChannelRuntimeFile[]>; }\n` +
+    `export const CHANNEL_RUNTIMES: Record<"web" | "wechat" | "playable", ChannelRuntimeSpec> = ${JSON.stringify({ web, wechat, playable }, null, 2)};\n`;
   const target = path.join(ROOT, CHANNEL_RUNTIMES_PATH);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, content);
-  return { web: web.base.length + Object.values(web.groups).flat().length, wechat: wechat.base.length + Object.values(wechat.groups).flat().length };
+  const count = (s) => s.base.length + Object.values(s.groups).flat().length;
+  return { web: count(web), wechat: count(wechat), playable: count(playable) };
 }
 
 // 直接执行（node runtime/scripts/manifest.mjs）：生成并打印结果
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const counts = generateChannelRuntimes();
-  console.log(`[manifest] 已生成双渠道清单 → ${CHANNEL_RUNTIMES_PATH}（web ${counts.web} 项 / wechat ${counts.wechat} 项）`);
+  console.log(`[manifest] 已生成三渠道清单 → ${CHANNEL_RUNTIMES_PATH}（web ${counts.web} 项 / wechat ${counts.wechat} 项 / playable ${counts.playable} 项）`);
 }

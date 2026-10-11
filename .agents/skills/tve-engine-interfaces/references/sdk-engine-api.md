@@ -2,8 +2,8 @@
 
 ## 契约
 
-唯一事实源 `src/framework/scripting/tve.d.ts`（2261 行）；运行时实现镜像
-`src/runtime/core/tve.ts` → `public/engine/core/tve.mjs`（VERSION "1.3.0"）。
+唯一事实源 `src/framework/scripting/tve.d.ts`；运行时实现镜像
+`src/runtime/core/tve.ts` → `public/engine/core/tve.mjs`（VERSION "1.4.0"）。
 用户脚本固定导入：`import { Component, property, nodeType, engine } from "tve"`。
 设计约束：全部引擎自有类型（Vec3 普通对象、旋转用**度**），不暴露任何 three.js。
 
@@ -20,6 +20,7 @@
 | `engine.physics` | `applyImpulse/applyForce/setLinearVelocity/setGravityScale/wakeUp/setGravity/castRay({origin,direction,maxDistance,allHits,excludeNodeIds}) → PhysicsRayHit[]|Promise` |
 | `engine.ui` | `set/get/onClick/rectOf/metricsOf/screenToUi`（UI 画布叠加） |
 | `engine.logic` | LogicApi（FSM/BT 黑板与状态） |
+| `engine.playableAd` | PlayableAdApi（试玩广告宿主契约：`host/cta()/isViewable()/onViewableChange(cb)/report(event,data?)`；playable 渠道产物激活，其他产物/预览安全空转——结束卡下载按钮调 `cta()` 自动映射 mraid/Meta/Google 宿主；gameStart 由运行时宿主落定后自动打点，gameOver/gameRestart/自定义事件经 `report()` 转发平台通道+控制台留痕；实现 `src/runtime/runtime/playable/`，smoke `playable-ad`） |
 | `engine.tween` | TweenApi（见 sdk-utils.md） |
 | `engine.log/warn/error(...args)` | 日志（postLog 转发回编辑器控制台） |
 

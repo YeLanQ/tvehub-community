@@ -54,6 +54,11 @@ export function defaultExportTemplateId(): string {
   return BUILTIN_EXPORT_TEMPLATES[0]?.id ?? "web:multi";
 }
 
+/** 按形态取默认导出模板 id（playable 渠道单页/多文件两槽用；无命中返回空串） */
+export function defaultPlayableTemplateId(mode: "single" | "multi"): string {
+  return BUILTIN_EXPORT_TEMPLATES.find((t) => t.mode === mode)?.id ?? "";
+}
+
 /** 解析导出模板（id 不存在时回退默认模板；列表为空返回 null） */
 export function resolveExportTemplate(
   id: string | undefined,

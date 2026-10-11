@@ -98,6 +98,7 @@ fn build_export_release_renames_and_rewrites() {
             wechat_subpackages: None,
             wechat_subpackage_size: None,
         wechat_diag: None,
+        playable_targets: Vec::new(),
             },
             &JobCtx::default(),
     )

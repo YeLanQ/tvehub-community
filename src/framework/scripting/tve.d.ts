@@ -2276,6 +2276,59 @@ export interface UIApi {
   screenToUi(entity: Entity, x: number, y: number): UIPoint | null;
 }
 
+/**
+ * 试玩广告宿主契约（playable 渠道产物可用；其他产物/预览全部安全空转）。
+ * 用法：在结束卡（EndCard）的下载按钮点击处理里调 {@link PlayableAdApi.cta}，
+ * 运行时自动映射到所在广告平台的宿主函数（mraid.open / FbPlayableAd /
+ * ExitApi.exit），商店跳转由广告宿主接管。
+ */
+export interface PlayableAdApi {
+  /** 探测到的宿主平台："mraid" / "meta" / "google"；"web" = 非广告环境 */
+  readonly host: string;
+  /**
+   * 结束卡「下载/安装」按钮点击：映射到广告宿主的安装跳转；无宿主（web
+   * 自测环境）空转并在控制台提示。
+   */
+  cta(): void;
+  /** 广告位当前是否可见（mraid 跟随 viewableChange；其余平台恒 true） */
+  isViewable(): boolean;
+  /**
+   * 订阅广告位可见性变化（mraid 广告位滚出屏幕等；返回解绑函数）。
+   *
+   * ```ts
+   * import { Component, engine } from "tve";
+   *
+   * export default class EndCard extends Component {
+   *   private unbind: (() => void) | null = null;
+   *
+   *   onStart() {
+   *     // 广告位被移出屏幕时暂停结束卡上的补间动画
+   *     this.unbind = engine.playableAd.onViewableChange((viewable) => {
+   *       if (!viewable) engine.tween.pauseAll();
+   *       else engine.tween.resumeAll();
+   *     });
+   *   }
+   *
+   *   onDownloadClick() {
+   *     engine.playableAd.cta();   // 自动映射 mraid.open / FbPlayableAd / ExitApi
+   *   }
+   *
+   *   onDestroy() {
+   *     this.unbind?.();
+   *   }
+   * }
+   * ```
+   */
+  onViewableChange(cb: (viewable: boolean) => void): () => void;
+  /**
+   * 生命周期事件打点上报：转发到所在平台宿主的上报通道，并在控制台留痕。
+   * gameStart 在宿主落定后由运行时自动上报一次（无需手动调）；脚本在结束卡
+   * 出现时上报 gameOver、重玩时上报 gameRestart；也接受自定义事件名 + 附加
+   * 数据（postMessage 族平台随适配器逐家映射协议）。
+   */
+  report(event: string, data?: Record<string, unknown>): void;
+}
+
 /** 引擎入口（时间 / 输入 / 场景 / 动画 / 音频 / 粒子 / 物理 / UI / 逻辑 / 补间 / 日志） */
 export interface EngineApi {
   readonly time: TimeState;
@@ -2288,6 +2341,8 @@ export interface EngineApi {
   readonly ui: UIApi;
   /** 逻辑运行器（状态机/行为树）控制，详见 {@link LogicApi} */
   readonly logic: LogicApi;
+  /** 试玩广告宿主契约（playable 渠道产物可用），详见 {@link PlayableAdApi} */
+  readonly playableAd: PlayableAdApi;
   /** 补间动画（与顶层导出 tween 同一对象，详见 {@link TweenApi}） */
   readonly tween: TweenApi;
   /** 输出到编辑器控制台（预览）/ 浏览器控制台（发布产物） */

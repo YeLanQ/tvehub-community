@@ -300,7 +300,7 @@
   border-radius: 999px;
 }
 
-/* 产物形态徽标：多文件绿 / 单页蓝（右对齐） */
+/* 产物形态徽标：多文件绿 / 单页蓝 / 两者紫（右对齐） */
 .bp-mode {
   flex-shrink: 0;
   padding: 1px 8px;
@@ -318,6 +318,20 @@
   color: #5c9dd6;
   border-color: rgba(92, 157, 214, 0.55);
   background: rgba(92, 157, 214, 0.12);
+}
+.bp-mode.both {
+  color: #a884c4;
+  border-color: rgba(168, 132, 196, 0.55);
+  background: rgba(168, 132, 196, 0.12);
+}
+
+/* 不可用项（试玩广告「即将支持」目标）：整行置灰、勾选框禁用 */
+.bp-tpl.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.bp-tpl.disabled input {
+  cursor: not-allowed;
 }
 
 /* 构建场景勾选列表 */

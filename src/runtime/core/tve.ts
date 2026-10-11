@@ -59,9 +59,10 @@ import { DataCenter, dataCenter } from "./tve/data-center";
 import { animationApi, audioApi, particlesApi, physicsApi, sceneApi } from "./tve/engine-api";
 import { logicApi } from "./tve/logic-api";
 import { uiApi } from "./tve/ui-api";
+import { playableAdApi } from "./tve/playable-api";
 import { math } from "./tve/math";
 
-export const VERSION = "1.3.0";
+export const VERSION = "1.4.0";
 
 const easing = Object.freeze({ ...EASING });
 
@@ -75,6 +76,7 @@ const engine = {
   physics: physicsApi,
   ui: uiApi,
   logic: logicApi,
+  playableAd: playableAdApi,
   tween,
   log(...args: unknown[]) {
     postLog("info", formatArgs(args));

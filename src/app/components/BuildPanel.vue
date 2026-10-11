@@ -18,11 +18,13 @@ import {
   BUILD_CONFIG_REL,
   BUILTIN_EXPORT_TEMPLATES,
   defaultExportTemplateId,
+  defaultPlayableTemplateId,
   loadBuildPrefs,
   loadExportTemplates,
   saveBuildPrefs,
   runBuild,
   openBuildDir,
+  PLAYABLE_TARGETS,
   type BuildChannel,
   type BuildPrefs,
   type ExportTemplateInfo,
@@ -31,6 +33,7 @@ import { api, type BuildResult } from "../../lib/api";
 import { logStore } from "../stores/log";
 import BuildWebSettings from "./build/BuildWebSettings.vue";
 import BuildWechatSettings from "./build/BuildWechatSettings.vue";
+import BuildPlayableSettings from "./build/BuildPlayableSettings.vue";
 import "../../styles/components/build-panel.scss";
 
 const projectStore = getProjectStore();
@@ -78,6 +81,11 @@ const wechatDiag = ref(false);
 /** 微信多线程加速（Worker）：物理/动画在独立线程运行（缺省关 = 全主线程，
  *  微信多线程设备适配性/普及率不足） */
 const wechatWorker = ref(false);
+/** 试玩广告渠道：勾选的广告渠道目标 id（PLAYABLE_TARGETS 注册表） */
+const playableTargets = ref<string[]>([]);
+/** 试玩广告渠道：单页/多文件导出模板两槽（按勾选目标所需形态消费） */
+const playableTemplateSingle = ref(defaultPlayableTemplateId("single"));
+const playableTemplateMulti = ref(defaultPlayableTemplateId("multi"));
 
 // 调试/发布互斥：勾选其一自动取消另一个（两者都未选 = 标准构建）；
 // 真机诊断挂在调试模式下——关闭调试即清空诊断勾选（导出侧同步清设备开关）
@@ -92,17 +100,20 @@ watch(debug, (v) => {
 const building = ref(false);
 const result = ref<BuildResult | null>(null);
 const resultSource = ref<"fresh" | "persisted" | null>(null);
+/** 试玩广告单页产物的体积预算（字节；超出仅黄色提示不阻断——各平台上限常见 5MB） */
+const PLAYABLE_SIZE_BUDGET = 5 * 1024 * 1024;
 
 const currentChannel = computed(
   () => BUILD_CHANNELS.find((c) => c.id === channel.value) ?? BUILD_CHANNELS[0],
 );
-const canBuild = computed(
-  () =>
-    currentChannel.value.supported &&
-    selectedScenes.value.length > 0 &&
-    selectedTemplates.value.length > 0 &&
-    !building.value,
-);
+const canBuild = computed(() => {
+  if (!currentChannel.value.supported || selectedScenes.value.length === 0 || building.value) {
+    return false;
+  }
+  // playable 渠道以勾选目标为准入（模板选择在渠道设置内，不占 selectedTemplates）
+  if (channel.value === "playable") return playableTargets.value.length > 0;
+  return selectedTemplates.value.length > 0;
+});
 /** 输出目录预览：<项目>/build/<渠道> */
 const outputDirPreview = computed(() => {
   const root = projectStore.currentPath ?? "<项目根>";
@@ -152,6 +163,11 @@ async function restoreState(): Promise<void> {
       typeof prefs.wechatSubpackageSize === "number" && Number.isFinite(prefs.wechatSubpackageSize)
         ? Math.min(4, Math.max(1, Math.round(prefs.wechatSubpackageSize)))
         : 2;
+    playableTargets.value = (prefs.playableTargets ?? []).filter((id) =>
+      PLAYABLE_TARGETS.some((t) => t.id === id && t.available),
+    );
+    playableTemplateSingle.value = prefs.playableTemplates?.single || defaultPlayableTemplateId("single");
+    playableTemplateMulti.value = prefs.playableTemplates?.multi || defaultPlayableTemplateId("multi");
     // 兼容旧配置（两者曾可同时为 true）：发布模式优先
     if (release.value) debug.value = false;
     // 真机诊断挂在调试模式下（含旧配置归一化：watch 在无变化时不触发）
@@ -174,6 +190,9 @@ async function restoreState(): Promise<void> {
     wechatSubpackageSize.value = 2;
     wechatDiag.value = false;
     wechatWorker.value = false;
+    playableTargets.value = [];
+    playableTemplateSingle.value = defaultPlayableTemplateId("single");
+    playableTemplateMulti.value = defaultPlayableTemplateId("multi");
   }
   if (!selectedScenes.value.includes(mainScene.value)) {
     mainScene.value =
@@ -205,6 +224,11 @@ async function persistPrefs(): Promise<void> {
     wechatDiag: wechatDiag.value,
     wechatWorker: wechatWorker.value,
     wechatSubpackageSize: wechatSubpackageSize.value,
+    playableTargets: playableTargets.value,
+    playableTemplates: {
+      single: playableTemplateSingle.value || undefined,
+      multi: playableTemplateMulti.value || undefined,
+    },
   };
   try {
     await saveBuildPrefs(projectStore.currentPath, prefs);
@@ -238,6 +262,14 @@ async function doBuild(): Promise<void> {
       wechatSubpackageSize: wechatSubpackages.value ? wechatSubpackageSize.value : undefined,
       wechatDiag: wechatDiag.value || undefined,
       wechatWorker: wechatWorker.value || undefined,
+      playableTargets: channel.value === "playable" ? playableTargets.value : undefined,
+      playableTemplates:
+        channel.value === "playable"
+          ? {
+              single: playableTemplateSingle.value || undefined,
+              multi: playableTemplateMulti.value || undefined,
+            }
+          : undefined,
     });
     result.value = res;
     resultSource.value = "fresh";
@@ -260,6 +292,11 @@ function openDir(): void {
 const previewBase = ref("");
 const previewLoading = ref(false);
 const previewKey = ref(0);
+/** 预览服务的目录：渠道产物根（playable 渠道取首个目标的产物目录） */
+const previewRel = computed(() => {
+  if (channel.value !== "playable") return `build/${channel.value}`;
+  return result.value?.targets?.[0]?.out_rel || "build/playable";
+});
 const previewUrl = computed(() =>
   previewBase.value
     ? `${previewBase.value}/index.html${
@@ -270,13 +307,13 @@ const previewUrl = computed(() =>
     : "",
 );
 
-/** 起本地静态服务（服务 build/<渠道>），内嵌 iframe 预览构建产物 */
+/** 起本地静态服务（服务构建产物目录），内嵌 iframe 预览构建产物 */
 async function startPreview(): Promise<void> {
   const root = projectStore.currentPath;
   if (!root || !result.value || previewLoading.value) return;
   previewLoading.value = true;
   try {
-    previewBase.value = await api.startWebPreviewServer(root, `build/${channel.value}`);
+    previewBase.value = await api.startWebPreviewServer(root, previewRel.value);
     previewKey.value++;
     logStore.log("info", `构建预览已启动: ${previewBase.value}/index.html`, "build");
   } catch (e) {
@@ -424,6 +461,17 @@ watch(projectScenes, (next, prev) => {
               v-model:release="release"
               v-model:debug="debug"
             />
+            <BuildPlayableSettings
+              v-else-if="channel === 'playable'"
+              v-model:playable-targets="playableTargets"
+              v-model:export-templates="exportTemplates"
+              v-model:playable-template-single="playableTemplateSingle"
+              v-model:playable-template-multi="playableTemplateMulti"
+              v-model:gzip="gzip"
+              v-model:title="title"
+              v-model:release="release"
+              v-model:debug="debug"
+            />
             <p v-else class="bp-note">该渠道暂未支持。</p>
           </section>
 
@@ -455,6 +503,19 @@ watch(projectScenes, (next, prev) => {
                 · 场景 {{ result.scenes.length }} 个 · 资产 {{ result.assets_packed }} 项 · 主场景
                 {{ result.main_scene_name || result.main_scene || "—" }}
               </div>
+              <template v-if="result.targets.length">
+                <div
+                  v-for="t in result.targets"
+                  :key="`${t.id}-${t.form}`"
+                  class="bp-result-line"
+                >
+                  <span class="bp-muted">{{ t.id }} · {{ t.form === "single" ? "单页" : "多文件" }}</span>
+                  <code class="bp-outdir" :title="t.out_rel">{{ t.out_rel }}/</code>
+                  <span v-if="t.html_bytes > 0" :class="t.html_bytes > PLAYABLE_SIZE_BUDGET ? 'bp-warn' : 'bp-muted'">
+                    {{ (t.html_bytes / 1024 / 1024).toFixed(2) }}MB{{ t.html_bytes > PLAYABLE_SIZE_BUDGET ? " · 超平台常见预算（5MB），建议开启发布模式压缩" : "" }}
+                  </span>
+                </div>
+              </template>
               <div
                 v-if="!result.single_page && result.channel !== 'wechat'"
                 class="bp-result-line bp-hint"

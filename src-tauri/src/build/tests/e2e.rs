@@ -82,6 +82,7 @@ fn build_export_end_to_end_all_modes() {
             wechat_subpackages: None,
             wechat_subpackage_size: None,
             wechat_diag: None,
+            playable_targets: Vec::new(),
         };
         let result = run_build(job, &JobCtx::default())
             .unwrap_or_else(|e| panic!("single_page={single_page} gzip={gzip} 构建失败: {e}"));

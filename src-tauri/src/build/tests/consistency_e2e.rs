@@ -90,6 +90,7 @@ fn job(root: &Path, channel: &str, release: bool) -> BuildJob {
         wechat_subpackages: None,
         wechat_subpackage_size: None,
         wechat_diag: None,
+        playable_targets: Vec::new(),
     }
 }
 

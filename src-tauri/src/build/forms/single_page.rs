@@ -101,7 +101,7 @@ fn strip_player_script_tags(html: &str) -> String {
 /// three 不在代码表，其相对说明符直接重写为 CDN 绝对 URL），数据脚本 + 引导
 /// 脚本注入全部入口页（模板可用 {{BUILD_DATA}} 占位指定注入位置，无占位符时
 /// 回退注入 </body> 前；config 不落盘）。返回内联代码条数（gzip 资产数修正用）。
-pub(super) fn assemble_single_page(
+pub(in crate::build) fn assemble_single_page(
     files: &mut HashMap<String, String>,
     entries: &mut Vec<(String, Vec<u8>)>,
     cfg: serde_json::Map<String, serde_json::Value>,

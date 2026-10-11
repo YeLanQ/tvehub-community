@@ -1,17 +1,20 @@
 //! web 渠道产物管线（工厂桥接的渠道实现之一）：场景资产收集（kernel）→
-//! 发布模式压缩 → gzip/形态分流组装（单页 single_page / 多文件 multi_file
-//! 子模块）→ 写盘 → 自描述结果。
+//! 发布模式压缩 → 形态分流组装（共享形态机的单页 single_page / 多文件
+//! multi_file）→ 写盘 → 自描述结果。
 //!
-//! 渠道结构与微信渠道（../wechat/）对称：mod.rs 只做编排；archive（gzip 归档/
-//! 单页内联数据）、specifiers（模块说明符重写）、urls（远程地址/Three CDN）
-//! 为本渠道专属阶段。渠道选项语义（地址归一化、CDN 生效判定）在 resolve
-//! 一次完成，编排体内只消费归一化后的 WebParams。
+//! 渠道结构与微信渠道（../wechat/）对称：mod.rs 只做编排；形态组装机
+//! （archive/specifiers/urls/single_page/multi_file）已提升为渠道共享层
+//! （crate::build::forms——playable 渠道按目标形态复用同一套）。渠道选项
+//! 语义（地址归一化、CDN 生效判定）在 resolve 一次完成，编排体内只消费
+//! 归一化后的 WebParams。
 
 use std::collections::HashMap;
 
 use crate::build::finalize::{
     finish_result, main_scene_name, read_project_config, write_products, ResultDraft,
 };
+use crate::build::forms::urls;
+use crate::build::forms::{assemble_multi_file, assemble_single_page};
 use crate::build::job::{BuildJob, BuildResult, JobCtx, Prepared};
 use crate::build::kernel::classify::{is_minifiable_script, is_runtime_code};
 use crate::build::kernel::content::build_content;
@@ -19,14 +22,6 @@ use crate::build::kernel::release::minify_js_source;
 use crate::build::options::{ResolvedChannel, WebParams};
 use crate::build::pipeline::{progress, ChannelPipeline};
 use crate::build::steps::config::product_config;
-
-mod archive;
-mod multi_file;
-mod single_page;
-mod specifiers;
-mod urls;
-use self::multi_file::assemble_multi_file;
-use self::single_page::assemble_single_page;
 
 /// web 渠道：打包静态网页产物（多文件 / 单页 × gzip 可选 × 发布模式可选）
 pub struct WebPipeline;
@@ -206,6 +201,7 @@ impl ChannelPipeline for WebPipeline {
                 gzip: web.gzip,
                 cdn: web.cdn_active,
                 message,
+                targets: Vec::new(),
             },
         ))
     }

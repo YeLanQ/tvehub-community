@@ -27,8 +27,9 @@
   （draco_decoder.js 由 vendor-preview-loaders.mjs 构建期从 three gltf 变体拷入
   public/engine，不入库不在 extra；微信渠道随包以此为源）。
 
-**产物清单**：`src/generated/channel-runtimes.ts`（gen:channel-runtimes 自动扫描
-双渠道，勿手改）；`WEBGPU_FILES = [three.webgpu.min.js, particleNodeMaterial.mjs,
+**产物清单**：`src/generated/channel-runtimes.ts`（manifest.mjs 自动扫描三渠道
+web/wechat/playable——playable 与 web 同一份运行时文件，勿手改）；
+`WEBGPU_FILES = [three.webgpu.min.js, particleNodeMaterial.mjs,
 glslToTsl.mjs, nodeMaterialHooks.mjs]`。
 
 **wasm 文件化**（runtime/scripts/wasm-fileize.mjs，engine.mjs 构建链步骤）：物理

@@ -776,7 +776,21 @@ export type BuildExportArgs = {
   wechatSubpackageSize?: number;
   /** 微信真机诊断弹窗开关（game.js 启动同步到设备 storage；不勾选启动即清除） */
   wechatDiag?: boolean;
+  /** playable 渠道：勾选的试玩广告目标 id 列表（仅可用项；空 = preflight 拦截） */
+  playableTargets?: string[];
 };
+
+/** playable 渠道逐目标产物（BuildResult.targets 元素，与 Rust 同名结构对应） */
+export interface PlayableTargetResult {
+  /** 目标 id（PLAYABLE_TARGETS 注册表） */
+  id: string;
+  /** 产物形态："single" / "multi" */
+  form: string;
+  /** 相对项目根的产物目录（build/playable/<id>[/single|/multi]） */
+  out_rel: string;
+  /** 单页 HTML 字节数（multi 形态为 0） */
+  html_bytes: number;
+}
 
 /** 构建导出结果（与 Rust build::BuildResult 对应） */
 export interface BuildResult {
@@ -798,6 +812,8 @@ export interface BuildResult {
   assets_packed: number;
   missing: string[];
   message: string;
+  /** playable 渠道：逐目标产物清单（web/wechat 渠道为空数组） */
+  targets: PlayableTargetResult[];
 }
 /** 任务优先级（与 Rust task::Priority 对应） */
 export type TaskPriority = "low" | "normal" | "high";

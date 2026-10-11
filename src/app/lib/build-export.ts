@@ -16,6 +16,7 @@ export {
   getBuildChannel,
   BUILTIN_EXPORT_TEMPLATES,
   defaultExportTemplateId,
+  defaultPlayableTemplateId,
   fetchExportTemplateHtml,
   loadExportTemplates,
   resolveExportTemplate,
@@ -23,4 +24,12 @@ export {
   runBuild,
 } from "./build";
 export type { BuildChannel, ExportTemplateInfo } from "./build";
-export type { BuildResult } from "../../lib/api";
+export {
+  PLAYABLE_TARGETS,
+  neededForms,
+  playableTargetById,
+  targetOutRel,
+  applyPlayableExportArtifacts,
+} from "./build";
+export type { PlayableTarget, PlayableTargetForm } from "./build";
+export type { BuildResult, PlayableTargetResult } from "../../lib/api";

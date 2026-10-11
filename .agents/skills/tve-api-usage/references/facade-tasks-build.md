@@ -21,7 +21,7 @@
 | `exportWebPreviewFromScene(root, sceneRel, files)` | 当前场景导出预览产物（场景/贴图后端直读盘；files=网页运行时文本） |
 | `startWebPreviewServer(root, dir?)` → baseUrl | 起本地静态服务（缺省 .tmp/web-preview，可指 build/<channel>） |
 | `stopWebPreview()` | 停服务释放端口 |
-| `buildExport(args)` → `BuildResult` | 构建导出（channel/web 渠道: scenes/mainScene/singlePage/gzip/release/cdn/...；wechat 渠道: wechatAppid/wechatOrientation/wechatSubpackages/wechatSubpackageSize 可选） |
+| `buildExport(args)` → `BuildResult` | 构建导出（channel/web 渠道: scenes/mainScene/singlePage/gzip/release/cdn/...；wechat 渠道: wechatAppid/wechatOrientation/wechatSubpackages/wechatSubpackageSize 可选；playable 渠道: playableTargets 可选——勾选的试玩广告目标 id 列表，BuildResult.targets 逐目标回带 {id, form, out_rel, html_bytes}） |
 | `scanUserTemplates(kind)` / `readUserTemplateText(kind, dir, rel)` | exe 旁用户自定义模板（"templates"\|"exports-web"） |
 
 ## 使用例
@@ -43,8 +43,11 @@ await api.exportWebPreviewFromScene(root, sceneRel, files);
 const base = await api.startWebPreviewServer(root);
 ```
 
-`src/app/components/BuildPanel.vue`（构建产物预览：`startWebPreviewServer(root, "build/"+channel)`，
-`:291` stopWebPreview）；实际构建走 `src/app/lib/build/run.ts`（runBuild → api.buildExport；兼容门面 build-export.ts 仍在）。
+`src/app/components/BuildPanel.vue`（构建产物预览：`startWebPreviewServer(root, previewRel)`——
+web/wechat 指 `build/<channel>`，playable 指首个目标的产物目录；`:291` stopWebPreview）；
+实际构建走 `src/app/lib/build/run.ts`（runBuild → api.buildExport；兼容门面 build-export.ts 仍在）。
+playable 渠道的模板双入口注入在 `src/app/lib/build/playable-artifacts.ts`（index.html +
+index-multi.html，Rust playable 管线按目标形态取用）。
 
 ## 测试例
 

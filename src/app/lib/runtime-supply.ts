@@ -12,7 +12,7 @@ import {
   type ChannelRuntimeFile,
 } from "../../generated/channel-runtimes";
 
-export type RuntimeChannel = "web" | "wechat";
+export type RuntimeChannel = "web" | "wechat" | "playable";
 
 /** 运行时按需打包的条件项（体积大的可选运行时） */
 export interface ChannelRuntimeOptions {
@@ -110,9 +110,10 @@ export async function fetchChannelRuntimeFiles(
   const spec = CHANNEL_RUNTIMES[channel];
   if (!spec) throw new Error(`未知构建渠道: ${channel}`);
 
-  // 条件组映射（web 与 wechat 的可选面不同，键由 manifest.mjs 定义）
+  // 条件组映射（web/playable 的可选面相同，wechat 另有 Worker 组；键由
+  // manifest.mjs 定义）
   const groupKeys: string[] = [];
-  if (channel === "web") {
+  if (channel === "web" || channel === "playable") {
     if (opts.includePhysics) {
       const key = `physics:${opts.physicsBackend || "rapier"}`;
       // 未知后端回退 rapier（与历史行为一致）

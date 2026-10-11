@@ -5,7 +5,7 @@ use std::collections::HashMap;
 /// CDN 模式不内嵌的 three.js 运行时文件（位于 engine/core/；其余引擎模块仍
 /// 内嵌，经 import map 把代码里解析到同源 three 的说明符映射到资源地址下的
 /// 同名文件）
-pub(super) const THREE_RUNTIME_FILES: [&str; 3] = [
+pub(in crate::build) const THREE_RUNTIME_FILES: [&str; 3] = [
     "engine/core/three.core.min.js",
     "engine/core/three.module.min.js",
     "engine/core/three.webgpu.min.js",
@@ -22,7 +22,7 @@ pub(super) fn three_cdn_url(base: &str, rel: &str) -> String {
 
 /// 远程地址归一化：去首尾空白与结尾 '/'；无协议时补 https://
 /// （无协议地址会被浏览器按页面相对路径解析，与站点自身地址冲突）
-pub(super) fn normalize_base_url(raw: &str) -> String {
+pub(in crate::build) fn normalize_base_url(raw: &str) -> String {
     let mut s = raw.trim().trim_end_matches('/').to_string();
     if !s.is_empty() && !s.contains("://") && !s.starts_with("//") {
         s = format!("https://{s}");

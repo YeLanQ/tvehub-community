@@ -48,7 +48,7 @@ description: 用 tve SDK 为 TvE Hub 编写用户脚本（Component 组件）的
 | 刚体、碰撞回调、冲量、射线拾取 | references/physics-collision.md |
 | 补间动画、关键帧 .anim、骨骼动画/动画图 | references/tween-anim.md |
 | 场景查询、节点引用、跨组件通信 | references/scene-query-comm.md |
-| UI 画布/按钮、音频、粒子、灯光、地形 | references/ui-audio-fx.md |
+| UI 画布/按钮、音频、粒子、灯光、地形、试玩广告结束卡（CTA） | references/ui-audio-fx.md |
 | 状态机/行为树的脚本控制 | references/logic-fsm-bt.md |
 | 常见坑与自检清单、验证流程 | references/pitfalls.md |
 

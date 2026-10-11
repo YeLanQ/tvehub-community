@@ -30,11 +30,21 @@ pub struct WechatParams {
     pub subpackage_size: u32,
 }
 
+/// playable 渠道参数（目标已去重保序；CDN 强制关、多文件形态强制非 gzip
+/// 在管线 build 内实现）
+pub struct PlayableParams {
+    /// 勾选的试玩广告目标 id 列表（注册表见 channels/playable/targets.rs）
+    pub targets: Vec<String>,
+    /// 单页形态是否 gzip 内联（多文件形态恒非 gzip）
+    pub gzip_single: bool,
+}
+
 /// 公共预检后交付渠道管线的渠道参数。渠道与参数的配对由工厂保证
 /// （channel_pipeline 只把 WebParams 交给 WebPipeline），错配即程序性缺陷。
 pub enum ResolvedChannel {
     Web(WebParams),
     Wechat(WechatParams),
+    Playable(PlayableParams),
 }
 
 impl ResolvedChannel {
@@ -51,6 +61,14 @@ impl ResolvedChannel {
         match self {
             Self::Wechat(w) => w,
             _ => panic!("微信管线收到非微信渠道参数（工厂配对被破坏）"),
+        }
+    }
+
+    /// playable 渠道参数（同上）
+    pub fn playable(&self) -> &PlayableParams {
+        match self {
+            Self::Playable(p) => p,
+            _ => panic!("playable 管线收到非 playable 渠道参数（工厂配对被破坏）"),
         }
     }
 }

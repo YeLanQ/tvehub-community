@@ -21,7 +21,7 @@ CDN 模式下 three 运行时从远程基址加载（构建期相对说明符重
 **文本读取通道**（编辑器侧）：`src/app/lib/runtime-supply.ts` 的
 `fetchChannelRuntimeFiles(channel, opts)`（web-preview-runtime.ts 为其兼容门面）
 —— 清单来自 `src/generated/channel-runtimes.ts`（由 runtime/scripts/manifest.mjs
-扫描双渠道自动生成，勿手改）；物理按后端、WebGPU/Draco/Basis 按项目开关条件
+扫描三渠道（web/wechat/playable）自动生成，勿手改）；物理按后端、WebGPU/Draco/Basis 按项目开关条件
 包含。四种导出模式、微信渠道与局域网共享复用同一供给层。
 
 ## 使用例

@@ -92,3 +92,44 @@ if (src) { src.volume = 0.6; src.spatial = "3d"; src.play(); }
 
 - 工坊示例：`ButtonPulse.ts`、`DayNightCycle.ts`、`ParticleBurst.ts`、`AnimationDemo.ts`。
 - 回归：`smoke-particles-runtime.mjs` 为 P1 已知漂移套件（对照 tests/ISSUES.md 判断）。
+
+## 模板：试玩广告结束卡（EndCard + CTA）
+
+playable 渠道产物可用（`engine.playableAd`，PlayableAdApi）；其他产物/预览全部
+安全空转。场景内搭结束卡 UI（按钮 + 文案），按钮点击处理调 `cta()`：
+
+```ts
+import { Component, engine, UIButtonNode } from "tve";
+
+export default class EndCard extends Component {
+  @property({ type: UIButtonNode, label: "下载按钮" })
+  downloadBtn: UIButtonNode | null = null;
+  private unbind: (() => void) | null = null;
+
+  onStart() {
+    // 广告位滚出屏幕时暂停结束卡动效（mraid viewableChange；其余平台不触发）
+    this.unbind = engine.playableAd.onViewableChange((viewable) => {
+      if (!viewable) engine.tween.pauseAll();
+      else engine.tween.resumeAll();
+    });
+    this.downloadBtn?.onClick(() => engine.playableAd.cta());
+  }
+
+  /** 结束卡出现 = 本局试玩结束（平台打点：转发宿主上报通道） */
+  onEndCardShow() {
+    engine.playableAd.report("gameOver", { score: 100 });
+  }
+
+  onDestroy() {
+    this.unbind?.();
+  }
+}
+```
+
+契约速查：`engine.playableAd.host`（"mraid"/"meta"/"google"/"web"）、
+`cta()`（自动映射 mraid.open / FbPlayableAd.onCTAClick / ExitApi.exit，商店跳转
+由广告宿主接管）、`isViewable()`、`onViewableChange(cb) → 解绑函数`、
+`report(event, data?)`（生命周期打点：gameStart 宿主落定后由运行时自动上报一次；
+gameOver/gameRestart/自定义事件按时机手动调，转发平台宿主通道 + 控制台留痕）。
+构建入口：构建面板 → 试玩广告渠道 → 勾选目标（Meta/Google/MRAID 通用）→ 导出
+`build/playable/<目标>/index.html`。
