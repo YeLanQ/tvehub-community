@@ -17,7 +17,7 @@ description: TvE Hub 本地自动 CI：pnpm ci:local 一键门禁链（技能文
 | types | `pnpm exec vue-tsc --noEmit` | 类型错误（根 tsconfig strict；含 spec 文件——ES2020 口径在这里拦） |
 | layers | `node scripts/check-layers.mjs` | 越层依赖（只有 src/lib 可 import @tauri-apps/*） |
 | audit | `node scripts/audit/scan.mjs` | 质量+安全统一扫描（scripts/audit/）：硬编码密钥/XSS/路径穿越/命令执行/依赖 CVE/配置错误——Blocker/Critical/未接受 High 破防；复杂度/重复/空 catch/超长（Major 以下只报不拦）。报告 `reports/audit/audit-report.md`；设计内项 `--accept <token> --reason` 入 ledger.json（代码漂移自动失效） |
-| unit | `pnpm exec vitest run` | 351 例单元/组件测试 |
+| unit | `pnpm exec vitest run` | 单元/组件测试（802 例 / 95 文件，2026-10-11 实测；会随用例增长漂移，以运行输出为准） |
 | smoke | `node scripts/smoke/runner.mjs --core` | 31 个 P0 套件（运行时/渲染/引擎产物链路）必须全绿 |
 
 变体：`--only skills,unit` 只跑指定步；`--skip smoke` 快速迭代（输出会注明
