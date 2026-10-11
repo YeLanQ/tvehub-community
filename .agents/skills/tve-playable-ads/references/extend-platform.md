@@ -32,6 +32,7 @@ ironsource/mintegral/pangle 三占位目标解锁为语境（结论见下方已�
 | Unity Grow（原 ironSource） | docs.unity.com Grow「Playable asset specifications」：**单 HTML 全内联 ≤5MB + MRAID 3.0 + CTA=mraid.open + 等 viewableChange**；历史 DAPI postMessage 事件无公开官方文档 | 复用 `adapters/mraid.ts`（探测落 "mraid"） | single | 已上架 |
 | Mintegral | Unity Playworks 适配文档 + Mindworks 指南：单 HTML 或 zip ≤5MB，**必须接 App store click + GameEnded 两 API** | `adapters/mintegral.ts`：CTA=`window.install()`、`report("gameOver"/"gameEnd")`→`window.gameEnd()` | multi（zip 路线，构建自动打包 `<id>.zip`） | 已上架 |
 | TikTok / 穿山甲 Pangle | 开发者 spec 在 Pangle Partner Center **登录墙内**，公开渠道核不到 | 未实现 | single | 占位置灰 |
+| 华为鲸鸿动能 | 公开资料（hua-ad.com 投放指导站）显示其「试玩推广包」=**截取游戏代码的应用分包，随主包过审上架**（花瓣轻游云加载、结束页平台提供），官方明说「相较于传统 H5 试玩素材」——**不是 H5 素材上传模式**，且开发者文档 JS 渲染核不到素材规格页 | 形态不匹配，不接入（本产品无鸿蒙分包产出能力） | — | 不接入 |
 
 zip 命名约定（Luna 转述官方要求）：**zip、内层目录、入口 html 三者同名**——自动
 打包已是该结构（`mintegral.zip > mintegral/ > mintegral.html`，见 Rust
