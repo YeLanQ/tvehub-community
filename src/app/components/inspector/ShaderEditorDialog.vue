@@ -205,7 +205,7 @@ watch(
   width: min(1080px, 92vw);
   height: min(760px, 88vh);
   background: #1e1e1e;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   overflow: hidden;
@@ -216,12 +216,12 @@ watch(
   gap: 8px;
   padding: 8px 10px;
   background: #252526;
-  border-bottom: 1px solid var(--border, #333);
+  border-bottom: 1px solid var(--border);
 }
 .shader-modal-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text, #ddd);
+  color: var(--text);
 }
 .shader-modal-dirty {
   font-size: 11px;
@@ -230,7 +230,7 @@ watch(
 .shader-modal-rel {
   flex: 1 1 auto;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -240,8 +240,8 @@ watch(
   font-size: 11px;
   padding: 3px 10px;
   background: #3c3c3c;
-  color: var(--text, #ddd);
-  border: 1px solid var(--border, #444);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 3px;
   cursor: pointer;
 }
@@ -265,20 +265,20 @@ watch(
   width: 22px;
   height: 22px;
   background: transparent;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   border: none;
   cursor: pointer;
   font-size: 13px;
 }
 .shader-modal-close:hover {
-  color: var(--text, #ddd);
+  color: var(--text);
 }
 .shader-modal-error {
   padding: 6px 10px;
   font-size: 11px;
   color: #e08080;
   background: rgba(224, 128, 128, 0.08);
-  border-bottom: 1px solid var(--border, #333);
+  border-bottom: 1px solid var(--border);
 }
 .shader-modal-body {
   position: relative;
@@ -296,15 +296,15 @@ watch(
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   background: #1e1e1e;
 }
 .shader-modal-foot {
   padding: 6px 10px;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   background: #252526;
-  border-top: 1px solid var(--border, #333);
+  border-top: 1px solid var(--border);
 }
 .mono {
   font-family: Consolas, "Cascadia Mono", monospace;

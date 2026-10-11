@@ -282,10 +282,12 @@ export function getScriptsStore(): ScriptsStore {
       return out;
     },
     async prefetchScriptMetas() {
-      for (const rel of store.listScripts()) {
-        if (state.files.has(rel)) continue;
-        await ensureLoaded(rel);
-      }
+      // 清单内的未缓存项并发预读（清单 rel 唯一，无同键竞争）
+      await Promise.all(
+        store.listScripts()
+          .filter((rel) => !state.files.has(rel))
+          .map((rel) => ensureLoaded(rel)),
+      );
     },
     async reloadExternal(rels) {
       const root = getProjectStore().currentPath;

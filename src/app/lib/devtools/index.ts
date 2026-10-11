@@ -176,6 +176,6 @@ async function push(event: string, data: unknown): Promise<void> {
   try {
     await api.devtoolsPush(event, data);
   } catch {
-    /* ignore */
+    /* 控制端未连/后端不可用：遥测事件丢弃，不影响编辑器主流程 */
   }
 }

@@ -98,19 +98,22 @@ export async function applyMeshTextures(
       }
       const basicOnly = mat.type === "MeshBasicMaterial";
       const isToon = mat.type === "MeshToonMaterial";
-      for (const [field, srgb] of TEXTURE_CHANNELS) {
-        if (basicOnly && field !== "map") continue;
-        if (isToon && (field === "metalnessMap" || field === "roughnessMap")) continue;
-        if (isToon && field === "emissiveMap" && !m.emissionEnabled) continue;
-        const rel = m[field];
-        if (!rel) continue;
-        const tex = await loadImageTex(texCache, String(rel), srgb);
-        if (!tex) continue;
-        // 通道字段按材质子类存在（map/normalMap/…），动态写入走索引断言
-        (mat as unknown as Record<string, unknown>)[field] = tex;
-        if (field === "normalMap") (mat as THREE.MeshStandardMaterial).normalScale.set(1, 1);
-        mat.needsUpdate = true;
-      }
+      // 通道贴图并发装载（loadImageTex 按缓存 promise 去重），各自写回独立字段
+      await Promise.all(
+        TEXTURE_CHANNELS.map(async ([field, srgb]) => {
+          if (basicOnly && field !== "map") return;
+          if (isToon && (field === "metalnessMap" || field === "roughnessMap")) return;
+          if (isToon && field === "emissiveMap" && !m.emissionEnabled) return;
+          const rel = m[field];
+          if (!rel) return;
+          const tex = await loadImageTex(texCache, String(rel), srgb);
+          if (!tex) return;
+          // 通道字段按材质子类存在（map/normalMap/…），动态写入走索引断言
+          (mat as unknown as Record<string, unknown>)[field] = tex;
+          if (field === "normalMap") (mat as THREE.MeshStandardMaterial).normalScale.set(1, 1);
+          mat.needsUpdate = true;
+        }),
+      );
     }),
   );
 }

@@ -92,7 +92,7 @@ function endDrag(e: PointerEvent) {
   try {
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   } catch {
-    /* ignore */
+    /* 指针未处于捕获态（DOM 规范会抛 NotFoundError）：无需释放 */
   }
   if (!moved.value) {
     const el = e.currentTarget as HTMLInputElement;

@@ -31,7 +31,7 @@ async function syncMaximized(): Promise<void> {
   try {
     maximized.value = (await win?.isMaximized()) ?? false;
   } catch {
-    /* ignore */
+    /* 窗口已关闭/句柄失效：保持现值 */
   }
 }
 
@@ -40,7 +40,7 @@ async function onMinimize(): Promise<void> {
   try {
     await win?.minimize();
   } catch {
-    /* ignore */
+    /* 窗口已关闭：无操作可做 */
   }
 }
 
@@ -50,7 +50,7 @@ async function onToggleMaximize(): Promise<void> {
     await win?.toggleMaximize();
     await syncMaximized();
   } catch {
-    /* ignore */
+    /* 窗口已关闭/原生装饰不支持：保持现值 */
   }
 }
 
@@ -59,7 +59,7 @@ async function onClose(): Promise<void> {
   try {
     await win?.close();
   } catch {
-    /* ignore */
+    /* 窗口已关闭：目标本就是关闭 */
   }
 }
 
@@ -71,7 +71,7 @@ onMounted(async () => {
       void syncMaximized();
     });
   } catch {
-    /* ignore */
+    /* 事件桥不可用（浏览器开发环境）：最大化态不同步 */
   }
 });
 

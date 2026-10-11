@@ -38,7 +38,7 @@ function onImgLoad(e: Event): void {
 
 <style scoped>
 .asset-img-wrap {
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
   background:

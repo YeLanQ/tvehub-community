@@ -20,7 +20,7 @@ export function cloneVec3(v: Vec3): Vec3 {
 }
 
 export function cloneRecord<T extends JsonRecord>(r: T): T {
-  return JSON.parse(JSON.stringify(r)) as T;
+  return structuredClone(r) as T;
 }
 
 /** Convert Euler angles in degrees to radians. */

@@ -126,7 +126,7 @@ async function save(): Promise<boolean> {
     const name = title.value.replace(/\.fsm$/i, "");
     // 参数面板（paramList）是参数的唯一编辑入口：保存前重建 graph.params
     graph.value = { ...graph.value, params: paramsFromList() };
-    await api.fsmWrite(root, props.rel, name, JSON.parse(JSON.stringify(graph.value)));
+    await api.fsmWrite(root, props.rel, name, structuredClone(graph.value));
     dirty.value = false;
     // 场景里绑定该资产的运行器热重建（不必重开场景/重启运行）
     getEditorStore().engine.logic.invalidateAsset(props.rel);

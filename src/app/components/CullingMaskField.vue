@@ -170,9 +170,9 @@ function setNone(): void {
   width: 100%;
   padding: 4px 6px;
   font-size: 12px;
-  color: var(--text, #ddd);
-  background: var(--bg, #222);
-  border: 1px solid var(--border, #444);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
   text-align: left;
@@ -186,7 +186,7 @@ function setNone(): void {
 }
 .culling-mask-caret {
   flex: 0 0 auto;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   font-size: 10px;
 }
 /* 浮层 Teleport 到 body（fixed 定位），不受检查器卡片 overflow:hidden 裁剪 */
@@ -199,8 +199,8 @@ function setNone(): void {
   gap: 2px;
   max-height: 220px;
   overflow-y: auto;
-  background: var(--bg, #222);
-  border: 1px solid var(--border, #444);
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
@@ -209,15 +209,15 @@ function setNone(): void {
   gap: 6px;
   padding-bottom: 4px;
   margin-bottom: 2px;
-  border-bottom: 1px solid var(--border, #444);
+  border-bottom: 1px solid var(--border);
 }
 .culling-mask-quick button {
   flex: 1;
   padding: 2px 6px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   background: transparent;
-  border: 1px solid var(--border, #444);
+  border: 1px solid var(--border);
   border-radius: 3px;
   cursor: pointer;
 }
@@ -232,7 +232,7 @@ function setNone(): void {
 .culling-mask-index {
   flex: 0 0 16px;
   font-size: 10px;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   text-align: center;
 }
 .culling-mask-name {

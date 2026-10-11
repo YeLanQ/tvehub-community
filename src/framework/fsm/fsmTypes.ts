@@ -89,7 +89,7 @@ function num(v: unknown, fb: number): number {
 
 /** 深拷贝状态机图（编辑器改图前的工作副本） */
 export function cloneFsmGraph(g: FsmGraph): FsmGraph {
-  return JSON.parse(JSON.stringify(g)) as FsmGraph;
+  return structuredClone(g) as FsmGraph;
 }
 
 /** 生成不冲突的状态 id（s1、s2…） */

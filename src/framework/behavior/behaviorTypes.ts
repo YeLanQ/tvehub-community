@@ -212,7 +212,7 @@ function round2(v: number): string {
 
 /** 深拷贝行为树（编辑器改树前的工作副本） */
 export function cloneBehaviorTree(root: BTNode): BTNode {
-  return JSON.parse(JSON.stringify(root)) as BTNode;
+  return structuredClone(root) as BTNode;
 }
 
 /** 生成树内不冲突的节点 id（n1、n2…） */

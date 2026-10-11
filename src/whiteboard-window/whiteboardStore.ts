@@ -145,7 +145,9 @@ export function getWhiteboardStore(): WhiteboardStore {
     if (!isTauri()) return;
     void getCurrentWindow()
       .setTitle(`TvE 白板 – ${currentFileName()}${state.dirty ? " •" : ""}`)
-      .catch(() => {});
+      .catch(() => {
+        /* 标题仅为装饰态：窗口关闭中/句柄失效时静默 */
+      });
   }
 
   function pushUndo(label: string, snap: string): void {

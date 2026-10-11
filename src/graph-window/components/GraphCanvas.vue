@@ -157,7 +157,7 @@ function serializeDoc(): ScriptGraphDoc | null {
     }
     const g = n.data?.g as GNode | undefined;
     if (!g) continue;
-    doc.nodes.push(JSON.parse(JSON.stringify({ ...g, x: Math.round(n.position.x), y: Math.round(n.position.y) })));
+    doc.nodes.push(structuredClone({ ...g, x: Math.round(n.position.x), y: Math.round(n.position.y) }));
   }
   for (const e of edges.value) {
     doc.edges.push({
@@ -458,7 +458,7 @@ function copySelection(): void {
   if (!sel.length) return;
   const ids = new Set(sel.map((n) => n.id));
   clip = {
-    nodes: sel.map((n) => ({ type: n.type, data: JSON.parse(JSON.stringify(n.data)) })),
+    nodes: sel.map((n) => ({ type: n.type, data: structuredClone(n.data) })),
     edges: edges.value
       .filter((e) => ids.has(e.source) && ids.has(e.target))
       .map((e) => ({
@@ -498,7 +498,7 @@ function paste(at?: { x: number; y: number }): void {
       return toFlowComment({ ...c, id: newId, x: c.x + dx, y: c.y + dy });
     }
     const g = n.data?.g as GNode;
-    const copy = JSON.parse(JSON.stringify({ ...g, id: newId, x: g.x + dx, y: g.y + dy })) as GNode;
+    const copy = structuredClone({ ...g, id: newId, x: g.x + dx, y: g.y + dy }) as GNode;
     // 容器归属重映射：随复制容器走；原容器不在复制集内则清除归属
     if (copy.containerId) {
       copy.containerId = idMap.get(copy.containerId) ?? "";

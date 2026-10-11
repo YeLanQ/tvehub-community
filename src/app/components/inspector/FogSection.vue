@@ -131,7 +131,7 @@ function onColor(e: Event): void {
   line-height: 1;
   padding: 3px 6px;
   border-radius: 3px;
-  border: 1px solid var(--border, #444);
-  color: var(--text, #ddd);
+  border: 1px solid var(--border);
+  color: var(--text);
 }
 </style>

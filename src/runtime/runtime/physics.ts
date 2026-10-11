@@ -1346,7 +1346,7 @@ async function loadJolt(): Promise<{ createWorld(gravity: PhysVec3): PhysicsWorl
             try {
               Jolt.destroy(s);
             } catch {
-              /* 忽略 */
+              /* wasm 形状对象已释放（共享形状被多次销毁）：防二次释放中断清理 */
             }
           }
         },
@@ -1421,7 +1421,7 @@ async function loadJolt(): Promise<{ createWorld(gravity: PhysVec3): PhysicsWorl
             Jolt.destroy(gravityScratch);
             Jolt.destroy(interface3d);
           } catch {
-            /* 忽略 */
+            /* wasm 对象已释放（后端被销毁两次等）：防二次释放中断卸载 */
           }
         },
       };

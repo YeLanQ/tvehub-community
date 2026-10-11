@@ -42,6 +42,19 @@ export async function ensureWhiteboardMeta(name: string): Promise<WhiteboardMeta
   return entry;
 }
 
+/** 批量登记缺失的元数据：整份索引一次读-改-写（逐个 ensure 会 N 次往返且互相覆盖） */
+export async function ensureWhiteboardMetas(names: string[]): Promise<WhiteboardMetaIndex> {
+  const index = await loadWhiteboardMeta();
+  let changed = false;
+  for (const name of names) {
+    if (!name || index[name]) continue;
+    index[name] = emptyWhiteboardMeta();
+    changed = true;
+  }
+  if (changed) await saveWhiteboardMeta(index);
+  return index;
+}
+
 /** 合并写入某白板的元数据（读取-修改-写回；createdAt 缺省补当前时间） */
 export async function patchWhiteboardMeta(
   name: string,

@@ -245,13 +245,13 @@ function onSplatmap(e: Event): void {
   padding-top: 4px;
   font-size: 10px;
   letter-spacing: 0.4px;
-  color: var(--text-dim, #999);
-  border-top: 1px solid var(--border, #333);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
 }
 .ts-layer {
   margin: 4px 0;
   padding: 4px 0;
-  border-top: 1px solid var(--border, #2a2a2a);
+  border-top: 1px solid var(--border);
 }
 .ts-layer-head {
   display: flex;
@@ -262,11 +262,11 @@ function onSplatmap(e: Event): void {
 .ts-ch {
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent, #4a9eff);
+  color: var(--accent);
   width: 12px;
 }
 .ts-layer-title {
   font-size: 10px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 </style>

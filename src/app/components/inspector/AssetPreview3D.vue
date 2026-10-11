@@ -812,7 +812,7 @@ watch(playing, (v) => {
   max-height: 320px;
   min-height: 180px;
   width: 100%;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
   background: #202024;
@@ -845,13 +845,13 @@ watch(playing, (v) => {
   border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(20, 20, 22, 0.72);
-  color: var(--text-dim, #bbb);
+  color: var(--text-dim);
   cursor: pointer;
 }
 
 .asset-preview-bar button:hover:not(:disabled),
 .asset-preview-bar select:hover {
-  color: var(--text, #eee);
+  color: var(--text);
   border-color: rgba(255, 255, 255, 0.32);
 }
 
@@ -861,8 +861,8 @@ watch(playing, (v) => {
 }
 
 .asset-preview-bar button.on {
-  color: var(--accent, #4a9eff);
-  border-color: var(--accent, #4a9eff);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .asset-preview-bar select {
@@ -872,6 +872,6 @@ watch(playing, (v) => {
 .asset-preview-hint {
   margin-top: 3px;
   font-size: 10px;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
 }
 </style>

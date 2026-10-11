@@ -68,12 +68,12 @@ const emit = defineEmits<{
   line-height: 1;
   padding: 3px 6px;
   border-radius: 3px;
-  border: 1px solid var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border: 1px solid var(--accent);
+  color: var(--accent);
 }
 .asset-badge.internal {
-  border-color: var(--text-dim, #888);
-  color: var(--text-dim, #888);
+  border-color: var(--text-dim);
+  color: var(--text-dim);
 }
 .asset-btn {
   flex: none;
@@ -81,13 +81,13 @@ const emit = defineEmits<{
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .asset-btn:hover {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 </style>

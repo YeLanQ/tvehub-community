@@ -85,7 +85,7 @@ export async function loadWhiteboardLayout(): Promise<void> {
     const saved = await uiStateGet<Partial<WhiteboardLayout>>(KEY);
     if (saved) applySavedLayout(saved);
   } catch {
-    /* ignore */
+    /* 后端不可用/数据损坏：保持默认布局 */
   }
 }
 

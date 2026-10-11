@@ -273,7 +273,7 @@
   margin: 0;
   font-size: 11.5px;
   line-height: 1.6;
-  color: #d9a13b;
+  color: var(--warn);
 }
 
 .bp-error {
@@ -420,7 +420,7 @@
   color: var(--text);
 }
 .bp-ok {
-  color: var(--success, #4caf7d);
+  color: var(--ok);
 }
 .bp-muted {
   color: var(--text-dim);
@@ -432,7 +432,7 @@
   color: var(--text-dim);
 }
 .bp-missing-title {
-  color: var(--warning, #d9a13b);
+  color: var(--warn);
 }
 .bp-missing ul {
   margin: 4px 0 0;

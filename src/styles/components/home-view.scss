@@ -717,7 +717,7 @@
 }
 
 .devtools-code:hover {
-  border-color: var(--accent, #4a8cff);
+  border-color: var(--accent);
 }
 
 /* MCP 已暴露工具网格 */
@@ -1151,5 +1151,5 @@
   flex: 1 1 auto;
   width: 100%;
   border: 0;
-  background: #141414;
+  background: var(--bg);
 }

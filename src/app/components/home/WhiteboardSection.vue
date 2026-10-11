@@ -13,8 +13,7 @@ import { confirm } from "../../lib/confirm";
 import { api } from "../../../lib/api";
 import { isTauri } from "../../../lib/tauri-env";
 import {
-  ensureWhiteboardMeta,
-  loadWhiteboardMeta,
+  ensureWhiteboardMetas,
   onWhiteboardMetaChange,
   patchWhiteboardMeta,
   removeWhiteboardMeta,
@@ -50,8 +49,7 @@ async function refresh(): Promise<void> {
   errorText.value = "";
   try {
     const names = await api.whiteboardListFiles();
-    for (const n of names) await ensureWhiteboardMeta(n);
-    const meta = await loadWhiteboardMeta();
+    const meta = await ensureWhiteboardMetas(names);
     items.value = names.map((name) => ({
       name,
       meta:

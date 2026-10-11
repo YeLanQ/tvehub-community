@@ -83,7 +83,7 @@ watch(src, () => { playing.value = false; cur.value = 0; dur.value = 0; });
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px;
   margin-bottom: 2px;

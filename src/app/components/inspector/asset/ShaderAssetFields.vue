@@ -111,7 +111,7 @@ const isSky = computed(() => !props.doc.base && props.doc.hooks.length === 0);
 .shader-prop-key {
   flex: none;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
 }
 .shader-edit-btn {
   align-self: flex-start;
@@ -119,9 +119,9 @@ const isSky = computed(() => !props.doc.base && props.doc.hooks.length === 0);
   font-size: 11px;
   padding: 3px 10px;
   border-radius: 3px;
-  border: 1px solid var(--accent, #4a9eff);
+  border: 1px solid var(--accent);
   background: transparent;
-  color: var(--accent, #4a9eff);
+  color: var(--accent);
   cursor: pointer;
 }
 .shader-edit-btn:hover {
@@ -136,9 +136,9 @@ const isSky = computed(() => !props.doc.base && props.doc.hooks.length === 0);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text, #ddd);
+  color: var(--text);
   background: rgba(0, 0, 0, 0.28);
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 4px;
   user-select: text;
   cursor: text;

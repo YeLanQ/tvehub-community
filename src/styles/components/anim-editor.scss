@@ -138,11 +138,11 @@
   }
 
   &.rec {
-    color: var(--err, #e06c5a);
+    color: var(--err);
     font-size: 12px;
 
     &.on {
-      background: var(--err, #e06c5a);
+      background: var(--err);
       color: #fff;
       animation: anim-rec-blink 1s infinite;
     }
@@ -174,8 +174,8 @@
 
 /* 聚焦编辑模式的「退出编辑」按钮（强调色，置于目标标签旁） */
 .anim-btn.exit-edit {
-  color: var(--accent, #4a9eff);
-  border-color: var(--accent, #4a9eff);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* 视图模式下拉（帧动画 / 曲线编辑，工具条右端） */
@@ -195,7 +195,7 @@
   color: var(--text-dim);
 
   &.dirty {
-    color: var(--warn, #d7b45a);
+    color: var(--warn);
   }
 }
 
@@ -337,8 +337,8 @@
 }
 
 .anim-row-head .k-btn.del:hover {
-  color: var(--err, #e06c5a);
-  border-color: var(--err, #e06c5a);
+  color: var(--err);
+  border-color: var(--err);
 }
 
 .lane-empty {
@@ -409,7 +409,7 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: var(--accent, #4a9eff);
+  background: var(--accent);
   pointer-events: none;
 
   &.thin {
@@ -424,7 +424,7 @@
   height: 9px;
   margin: -5px 0 0 -5px;
   padding: 0;
-  background: var(--accent, #4a9eff);
+  background: var(--accent);
   border: 1px solid #fff;
   transform: rotate(45deg);
   /* 与曲线编辑统一：关键帧拖拽 = 抓取小手（横向语义由 panning/操作提示传达） */
@@ -575,7 +575,7 @@
   }
 
   .c-playhead {
-    stroke: var(--accent, #4a9eff);
+    stroke: var(--accent);
     stroke-width: 1;
     opacity: 0.7;
   }
@@ -587,12 +587,12 @@
 
   .c-line {
     fill: none;
-    stroke: var(--accent, #4a9eff);
+    stroke: var(--accent);
     stroke-width: 1.5;
   }
 
   .c-key {
-    fill: var(--accent, #4a9eff);
+    fill: var(--accent);
     stroke: #fff;
     stroke-width: 1;
     /* 与帧动画轨道关键帧统一：抓取小手光标 */
@@ -604,7 +604,7 @@
 
     /* 手动贝塞尔切线帧：琥珀色区分自动帧 */
     &.manual {
-      fill: var(--warn, #d7b45a);
+      fill: var(--warn);
     }
 
     /* 切线对称（联动）：虚线描边 */
@@ -637,7 +637,7 @@
 
   .c-handle-end {
     fill: #fff;
-    stroke: var(--accent, #4a9eff);
+    stroke: var(--accent);
     stroke-width: 1;
     cursor: grab;
 

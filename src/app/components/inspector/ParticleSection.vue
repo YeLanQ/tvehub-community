@@ -350,8 +350,8 @@ function rtRestart(): void {
   padding-top: 4px;
   font-size: 10px;
   letter-spacing: 0.4px;
-  color: var(--text-dim, #999);
-  border-top: 1px solid var(--border, #333);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
 }
 .ps-toggle {
   display: inline-flex;
@@ -359,7 +359,7 @@ function rtRestart(): void {
   gap: 4px;
   margin-right: 10px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   padding: 2px 0;
 }
@@ -379,14 +379,14 @@ function rtRestart(): void {
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .ps-btns button:hover {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .ps-state {
   flex: 1 1 auto;
@@ -395,6 +395,6 @@ function rtRestart(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 </style>

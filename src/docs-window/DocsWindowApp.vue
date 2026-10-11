@@ -68,7 +68,7 @@ function onFrameLoad(): void {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #141414;
+  background: var(--bg);
 }
 .docs-frame {
   flex: 1 1 auto;

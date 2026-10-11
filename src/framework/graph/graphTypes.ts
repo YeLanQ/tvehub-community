@@ -174,7 +174,7 @@ function num(v: unknown, fb: number): number {
 
 /** 深拷贝场景图 */
 export function cloneGraphDoc(g: ScriptGraphDoc): ScriptGraphDoc {
-  return JSON.parse(JSON.stringify(g)) as ScriptGraphDoc;
+  return structuredClone(g) as ScriptGraphDoc;
 }
 
 /** 图内不冲突的节点 id（n1、n2…） */

@@ -868,17 +868,20 @@ export function createUI({ nodes, canvas, scene, render, scaleMode: globalScaleM
 
   /** 图片/按钮背景贴图异步回填（资产已在导出产物内，按相对路径 fetch） */
   async function applyTextures(): Promise<void> {
-    for (const w of widgets) {
-      if (w.json.type !== "uiImageNode" && w.json.type !== "uiButtonNode") continue;
-      const rel = typeof w.json.image === "string" ? w.json.image : "";
-      if (!rel) continue;
-      const tex = await loadImageTex(texCache, rel, true);
-      if (!tex) continue;
-      // image/button 的 obj 恒为 Mesh（buildUIImage/buildUIButton 产出）
-      const mat = (w.obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      mat.map = tex;
-      mat.needsUpdate = true;
-    }
+    // 各控件贴图并发回填（loadImageTex 按缓存 promise 去重）
+    await Promise.all(
+      widgets.map(async (w) => {
+        if (w.json.type !== "uiImageNode" && w.json.type !== "uiButtonNode") return;
+        const rel = typeof w.json.image === "string" ? w.json.image : "";
+        if (!rel) return;
+        const tex = await loadImageTex(texCache, rel, true);
+        if (!tex) return;
+        // image/button 的 obj 恒为 Mesh（buildUIImage/buildUIButton 产出）
+        const mat = (w.obj as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        mat.map = tex;
+        mat.needsUpdate = true;
+      }),
+    );
   }
 
   // —— tve SDK 转发（engine.ui）——

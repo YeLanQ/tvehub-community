@@ -180,8 +180,8 @@ function clamp(v: number, lo: number, hi: number): number {
   padding-top: 4px;
   font-size: 10px;
   letter-spacing: 0.4px;
-  color: var(--text-dim, #999);
-  border-top: 1px solid var(--border, #333);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
 }
 .ts-actions {
   display: flex;
@@ -195,14 +195,14 @@ function clamp(v: number, lo: number, hi: number): number {
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .ts-actions button:hover:not(:disabled) {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .ts-actions button:disabled {
   opacity: 0.45;
@@ -210,6 +210,6 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 .ts-actions .hint {
   font-size: 10px;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
 }
 </style>

@@ -551,7 +551,7 @@ function removeBinding(targetNodeId: string): void {
 
 <style scoped>
 .skin-fields {
-  border-top: 1px solid var(--border, #333);
+  border-top: 1px solid var(--border);
   margin-top: 6px;
   padding-top: 6px;
   display: flex;
@@ -561,7 +561,7 @@ function removeBinding(targetNodeId: string): void {
 
 /* —— 卡片分组 —— */
 .skin-card {
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--panel-deep, #17171c);
   overflow: hidden;
@@ -580,7 +580,7 @@ function removeBinding(targetNodeId: string): void {
   gap: 5px;
   background: transparent;
   border: none;
-  color: var(--text, #ddd);
+  color: var(--text);
   font-size: 11px;
   font-weight: 600;
   text-align: left;
@@ -596,12 +596,12 @@ function removeBinding(targetNodeId: string): void {
   font-size: 9px;
   width: 10px;
   flex: none;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .card-toggle .count {
   font-size: 10px;
   font-weight: 400;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .header-tools {
   display: flex;
@@ -614,7 +614,7 @@ function removeBinding(targetNodeId: string): void {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-top: 1px solid var(--border, #333);
+  border-top: 1px solid var(--border);
 }
 
 /* —— 通用控件 —— */
@@ -623,7 +623,7 @@ function removeBinding(targetNodeId: string): void {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   padding: 2px 0;
   white-space: nowrap;
@@ -633,15 +633,15 @@ function removeBinding(targetNodeId: string): void {
   line-height: 1.2;
   padding: 2px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   white-space: nowrap;
 }
 .skin-btn:hover:not(:disabled) {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .skin-btn:disabled {
   opacity: 0.4;
@@ -656,7 +656,7 @@ function removeBinding(targetNodeId: string): void {
 }
 .hint {
   font-size: 10px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   padding: 1px 0;
 }
 
@@ -666,19 +666,19 @@ function removeBinding(targetNodeId: string): void {
   box-sizing: border-box;
   font-size: 11px;
   padding: 3px 6px;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--input-bg, #1b1b22);
-  color: var(--text, #ddd);
+  color: var(--text);
 }
 .skin-search:focus {
   outline: none;
-  border-color: var(--accent, #4a9eff);
+  border-color: var(--accent);
 }
 .bone-tree {
   max-height: 180px;
   overflow-y: auto;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 3px;
 }
 .bone-row {
@@ -686,7 +686,7 @@ function removeBinding(targetNodeId: string): void {
   align-items: center;
   gap: 2px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   padding: 1px 4px;
   white-space: nowrap;
@@ -696,19 +696,19 @@ function removeBinding(targetNodeId: string): void {
 }
 .bone-row.selected {
   background: var(--accent-dim, #4a9eff33);
-  color: var(--accent, #4a9eff);
+  color: var(--accent);
 }
 .bone-row .arrow {
   width: 10px;
   flex: none;
   text-align: center;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .bone-row .arrow.ghost {
   visibility: hidden;
 }
 .bone-row.ik-hit .bone-name {
-  color: var(--accent, #4a9eff);
+  color: var(--accent);
 }
 .bone-name {
   overflow: hidden;
@@ -729,7 +729,7 @@ function removeBinding(targetNodeId: string): void {
 }
 .bone-chip {
   font-size: 10px;
-  color: var(--accent, #4a9eff);
+  color: var(--accent);
   background: var(--accent-dim, #4a9eff26);
   border-radius: 3px;
   padding: 2px 6px;
@@ -751,7 +751,7 @@ function removeBinding(targetNodeId: string): void {
 }
 .tf-label {
   font-size: 10px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 
 /* —— 形态键 / 权重滑块 —— */
@@ -760,7 +760,7 @@ function removeBinding(targetNodeId: string): void {
 }
 .morph-mesh {
   font-size: 10px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   padding: 2px 0;
 }
 .morph-row {
@@ -778,20 +778,20 @@ function removeBinding(targetNodeId: string): void {
 }
 .morph-name {
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .morph-val {
   font-size: 10px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   text-align: right;
 }
 
 .weight-row {
   padding: 2px 0;
-  border-bottom: 1px dashed var(--border, #333);
+  border-bottom: 1px dashed var(--border);
 }
 .weight-row:last-of-type {
   border-bottom: none;
@@ -825,10 +825,10 @@ function removeBinding(targetNodeId: string): void {
   box-sizing: border-box;
   font-size: 11px;
   padding: 3px 4px;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--border);
   border-radius: 3px;
   background: var(--input-bg, #1b1b22);
-  color: var(--text, #ddd);
+  color: var(--text);
   min-width: 0;
 }
 .attach-opts {

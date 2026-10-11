@@ -256,8 +256,8 @@ function onTextureEdit(def: MaterialParamDef, e: Event): void {
   gap: 8px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-dim, #999);
-  border-top: 1px solid var(--border, #333);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
   padding: 6px 0 2px;
   margin-top: 4px;
 }
@@ -271,13 +271,13 @@ function onTextureEdit(def: MaterialParamDef, e: Event): void {
   flex: none;
   font-size: 11px;
   font-weight: 400;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .mat-enable input {
   margin: 0;
 }
 .mat-enable input:disabled + span {
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 </style>

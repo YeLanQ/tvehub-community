@@ -343,25 +343,31 @@ const fsmScopeAssets = computed<string[]>(() => {
 watch(fsmScopeAssets, (assets) => {
   void (async () => {
     const root = store.root;
+    if (!root) return;
+    // 资产读并发拉取；解析结果仍按资产顺序消费（seen 去重顺序稳定）
+    const parsedList = await Promise.all(
+      assets.map(async (rel) => {
+        try {
+          return JSON.parse(await api.readText(root, rel)) as {
+            graph?: {
+              states?: { id: string; name: string }[];
+              transitions?: { event?: string; to?: string }[];
+            };
+          };
+        } catch {
+          return null; /* 资产缺失/解析失败：该来源无事件候选（加载失败静默） */
+        }
+      }),
+    );
     const out: FsmAssetEvent[] = [];
     const seen = new Set<string>();
-    for (const rel of assets) {
-      if (!root) break;
-      try {
-        const parsed = JSON.parse(await api.readText(root, rel)) as {
-          graph?: {
-            states?: { id: string; name: string }[];
-            transitions?: { event?: string; to?: string }[];
-          };
-        };
-        const nameOf = (sid: string) => parsed.graph?.states?.find((s) => s.id === sid)?.name ?? sid;
-        for (const t of parsed.graph?.transitions ?? []) {
-          if (!t.event || seen.has(t.event)) continue;
-          seen.add(t.event);
-          out.push({ event: t.event, to: nameOf(t.to ?? "") });
-        }
-      } catch {
-        /* 资产缺失/解析失败：该来源无事件候选（加载失败静默） */
+    for (const parsed of parsedList) {
+      if (!parsed) continue;
+      const nameOf = (sid: string) => parsed.graph?.states?.find((s) => s.id === sid)?.name ?? sid;
+      for (const t of parsed.graph?.transitions ?? []) {
+        if (!t.event || seen.has(t.event)) continue;
+        seen.add(t.event);
+        out.push({ event: t.event, to: nameOf(t.to ?? "") });
       }
     }
     fsmAssetEvents.value = out;

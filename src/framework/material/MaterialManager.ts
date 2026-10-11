@@ -93,32 +93,33 @@ export class MaterialManager {
 
   /** 预取一组材质引用并入缓存（失败项静默跳过，渲染回退默认参数）。
    * 在途加载会被等待（而不是跳过）：调用方「缓存里没有 → preload → 重试」的模式
-   * 遇到跳过时会一直拿不到新值。 */
+   * 遇到跳过时会一直拿不到新值。各引用并发装载（loading 表保证同引用只取一次）。 */
   async preload(rels: string[]): Promise<number> {
     if (!this.fetcher) return 0;
     let loaded = 0;
-    for (const rel of rels) {
-      if (!rel || this.cache.has(rel)) continue;
-      const inflight = this.loading.get(rel);
-      if (inflight) {
-        await inflight;
-        if (this.cache.has(rel)) loaded++;
-        continue;
-      }
-      const task = (async () => {
-        try {
-          const doc = await this.fetcher!(rel);
-          if (doc) this.cache.set(rel, doc);
-        } catch {
-          // 读取失败：保持默认参数
-        } finally {
-          this.loading.delete(rel);
+    await Promise.all(
+      rels.map(async (rel) => {
+        if (!rel || this.cache.has(rel)) return;
+        const inflight = this.loading.get(rel);
+        if (!inflight) {
+          const task = (async () => {
+            try {
+              const doc = await this.fetcher!(rel);
+              if (doc) this.cache.set(rel, doc);
+            } catch {
+              // 读取失败：保持默认参数
+            } finally {
+              this.loading.delete(rel);
+            }
+          })();
+          this.loading.set(rel, task);
+          await task;
+        } else {
+          await inflight;
         }
-      })();
-      this.loading.set(rel, task);
-      await task;
-      if (this.cache.has(rel)) loaded++;
-    }
+        if (this.cache.has(rel)) loaded++;
+      }),
+    );
     return loaded;
   }
 

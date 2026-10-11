@@ -251,12 +251,12 @@ async function onShaderSelect(e: Event): Promise<void> {
   line-height: 1;
   padding: 3px 6px;
   border-radius: 3px;
-  border: 1px solid var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border: 1px solid var(--accent);
+  color: var(--accent);
 }
 .mat-badge.internal {
-  border-color: var(--text-dim, #888);
-  color: var(--text-dim, #888);
+  border-color: var(--text-dim);
+  color: var(--text-dim);
 }
 .mat-rel {
   flex: 1 1 auto;
@@ -264,7 +264,7 @@ async function onShaderSelect(e: Event): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .mat-btn {
   flex: none;
@@ -272,13 +272,13 @@ async function onShaderSelect(e: Event): Promise<void> {
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .mat-btn:hover {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 </style>

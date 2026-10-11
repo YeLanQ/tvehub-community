@@ -556,7 +556,7 @@ export const assetService = {
     const rel = uniqueRel(assets, destDir, baseName, FSM_EXT);
     const name = rel.slice(rel.lastIndexOf("/") + 1, rel.length - FSM_EXT.length);
     try {
-      await api.fsmWrite(root, rel, name, JSON.parse(JSON.stringify(DEFAULT_FSM_GRAPH)));
+      await api.fsmWrite(root, rel, name, structuredClone(DEFAULT_FSM_GRAPH) as unknown as Record<string, unknown>);
       logStore.log("success", `已新建状态机: ${rel}`);
       return rel;
     } catch (e) {

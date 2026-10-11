@@ -195,7 +195,7 @@ function rtStop(): void {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   padding: 2px 0;
 }
@@ -204,7 +204,7 @@ function rtStop(): void {
   align-items: center;
   gap: 8px;
   padding: 6px 0 2px;
-  border-top: 1px solid var(--border, #333);
+  border-top: 1px solid var(--border);
   margin-top: 4px;
 }
 .anim-btns {
@@ -217,14 +217,14 @@ function rtStop(): void {
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .anim-btns button:hover {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .anim-state {
   flex: 1 1 auto;
@@ -233,9 +233,9 @@ function rtStop(): void {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .hint.error {
-  color: #e06c5a;
+  color: var(--err);
 }
 </style>

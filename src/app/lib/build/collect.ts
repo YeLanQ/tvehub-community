@@ -84,16 +84,18 @@ function nodeUsesModel(json: unknown, depth: number): boolean {
 
 /** 任一构建场景含模型节点（读取失败/解析失败按不含处理，与配置判据同口径） */
 async function scenesUseModelNodes(root: string, scenes: string[]): Promise<boolean> {
-  for (const rel of scenes) {
-    try {
-      const text = await api.readText(root, rel);
-      const doc = JSON.parse(text) as { nodes?: unknown[] };
-      if (Array.isArray(doc.nodes) && doc.nodes.some((n) => nodeUsesModel(n, 32))) return true;
-    } catch {
-      /* 单场景读取失败按不含处理 */
-    }
-  }
-  return false;
+  const hits = await Promise.all(
+    scenes.map(async (rel) => {
+      try {
+        const text = await api.readText(root, rel);
+        const doc = JSON.parse(text) as { nodes?: unknown[] };
+        return Array.isArray(doc.nodes) && doc.nodes.some((n) => nodeUsesModel(n, 32));
+      } catch {
+        return false; /* 单场景读取失败按不含处理 */
+      }
+    }),
+  );
+  return hits.some(Boolean);
 }
 
 /** 组装渠道运行时与用户脚本编译产物（四胞胎的唯一实现，见模块头注释） */

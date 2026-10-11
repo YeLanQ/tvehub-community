@@ -418,8 +418,8 @@ const paramNames = computed(() => Object.keys(graph.value.params));
   gap: 8px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-dim, #999);
-  border-top: 1px solid var(--border, #333);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
   padding: 6px 0 4px;
   margin-top: 6px;
 }
@@ -432,15 +432,15 @@ const paramNames = computed(() => Object.keys(graph.value.params));
   line-height: 1.2;
   padding: 2px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .agraph-group button:hover:not(:disabled),
 .agraph-addcond:hover:not(:disabled) {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .agraph-group button:disabled,
 .agraph-addcond:disabled {
@@ -464,16 +464,16 @@ const paramNames = computed(() => Object.keys(graph.value.params));
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 3px;
-  border: 1px dashed var(--text-dim, #555);
+  border: 1px dashed var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .agraph-name:hover {
-  border-color: var(--accent, #4a9eff);
+  border-color: var(--accent);
 }
 .agraph-clip {
   flex: 1.4 1 80px;
@@ -499,7 +499,7 @@ const paramNames = computed(() => Object.keys(graph.value.params));
 }
 .agraph-arrow {
   flex: none;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
 }
 .agraph-del,
 .agraph-type {
@@ -508,26 +508,26 @@ const paramNames = computed(() => Object.keys(graph.value.params));
   line-height: 1.2;
   padding: 2px 6px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text-dim, #aaa);
+  color: var(--text-dim);
   cursor: pointer;
 }
 .agraph-del:hover {
-  border-color: #e06c5a;
-  color: #e06c5a;
+  border-color: var(--err);
+  color: var(--err);
 }
 .agraph-pname {
   flex: 1 1 auto;
   min-width: 40px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .agraph-tblock {
-  border-left: 2px solid var(--border, #333);
+  border-left: 2px solid var(--border);
   padding-left: 6px;
   margin: 2px 0 4px;
 }
@@ -542,7 +542,7 @@ const paramNames = computed(() => Object.keys(graph.value.params));
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   padding: 2px 0;
   overflow: hidden;
 }
@@ -556,13 +556,13 @@ const paramNames = computed(() => Object.keys(graph.value.params));
   line-height: 1.2;
   padding: 2px 6px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #555);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text-dim, #aaa);
+  color: var(--text-dim);
   cursor: pointer;
 }
 .agraph-force button.on {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 </style>

@@ -308,7 +308,7 @@ const visibleUniform = computed<boolean | null>(() => {
 .mixed-badge {
   flex-shrink: 0;
   font-size: 10px;
-  color: var(--warn, #d7b45a);
+  color: var(--warn);
   border: 1px solid currentColor;
   border-radius: 3px;
   padding: 0 4px;

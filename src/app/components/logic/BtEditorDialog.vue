@@ -101,7 +101,7 @@ async function save(): Promise<boolean> {
       root,
       props.rel,
       name,
-      JSON.parse(JSON.stringify(tree.value)) as Record<string, unknown>,
+      structuredClone(tree.value) as Record<string, unknown>,
     );
     dirty.value = false;
     // 场景里绑定该资产的运行器热重建（不必重开场景/重启运行）

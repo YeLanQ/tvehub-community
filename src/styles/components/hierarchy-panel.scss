@@ -72,17 +72,17 @@
 
   /* 动画聚焦编辑：目标子树高亮（根节点加左侧强调条）、其余节点置灰 */
   &.edit-hl {
-    color: var(--accent, #4a9eff);
+    color: var(--accent);
     background: rgba(74, 158, 255, 0.1);
 
     .name {
-      color: var(--accent, #4a9eff);
+      color: var(--accent);
       font-weight: 600;
     }
   }
 
   &.edit-root {
-    box-shadow: inset 3px 0 0 var(--accent, #4a9eff);
+    box-shadow: inset 3px 0 0 var(--accent);
   }
 
   &.edit-dim {
@@ -210,7 +210,7 @@
 
   &.off {
     opacity: 1;
-    color: var(--warn, #d7b45a);
+    color: var(--warn);
   }
 }
 

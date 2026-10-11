@@ -289,17 +289,25 @@ export async function createScripts({
   const failedScripts = new Set<string>();
 
   async function instantiate(items: ScriptBinding[]): Promise<void> {
-    for (const item of items) {
-      let mod: Record<string, unknown>;
-      try {
-        mod = await loadModule(item.script);
-      } catch (e) {
-        if (!failedScripts.has(item.script)) {
-          failedScripts.add(item.script);
-          postLog("error", `[脚本] 加载失败 ${item.script}: ${errText(e)}`);
+    // 模块并发预载（loadModule 按缓存 promise 去重）；实例化仍按绑定顺序，
+    // 保脚本构造/注册的先后语义不变
+    const mods = await Promise.all(
+      items.map(async (item) => {
+        try {
+          return await loadModule(item.script);
+        } catch (e) {
+          if (!failedScripts.has(item.script)) {
+            failedScripts.add(item.script);
+            postLog("error", `[脚本] 加载失败 ${item.script}: ${errText(e)}`);
+          }
+          return null;
         }
-        continue;
-      }
+      }),
+    );
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
+      const mod = mods[i];
+      if (!mod) continue;
       const Klass = mod && mod.default;
       if (typeof Klass !== "function" || !((Klass as ScriptKlass).prototype instanceof Component)) {
         if (!failedScripts.has(item.script)) {

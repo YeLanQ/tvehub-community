@@ -84,14 +84,14 @@ const simText = computed(() => {
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .phys-sim button:hover:not(:disabled) {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .phys-sim button:disabled {
   opacity: 0.45;
@@ -100,19 +100,19 @@ const simText = computed(() => {
 .phys-sim-state {
   margin-left: auto;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .phys-runtime {
   display: flex;
   gap: 6px;
   font-size: 11px;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
   margin-top: 4px;
 }
 .phys-hint {
   font-size: 10px;
   line-height: 1.5;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   margin-top: 4px;
 }
 </style>

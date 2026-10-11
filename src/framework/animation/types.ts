@@ -93,7 +93,7 @@ function bool(v: unknown, fb: boolean): boolean {
 
 /** 深拷贝动画图（编辑器改图前的工作副本 / 节点克隆） */
 export function cloneAnimGraph(g: AnimGraph): AnimGraph {
-  return JSON.parse(JSON.stringify(g)) as AnimGraph;
+  return structuredClone(g) as AnimGraph;
 }
 
 /** 生成不冲突的过渡 id（t1、t2…） */

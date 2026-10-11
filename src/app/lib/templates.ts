@@ -10,18 +10,18 @@ import { api } from "../../lib/api";
 export async function fetchTemplateFiles(
   template: ProjectTemplate,
 ): Promise<Record<string, string>> {
-  const files: Record<string, string> = {};
-  for (const rel of template.files) {
-    if (template.builtin === false && template.id.startsWith("user:")) {
-      files[rel] = await api.readUserTemplateText("templates", template.dir, rel);
-      continue;
-    }
-    const url = `/templates/${template.dir}/${rel}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`读取模板文件失败: ${url} (${res.status})`);
-    }
-    files[rel] = await res.text();
-  }
-  return files;
+  const entries = await Promise.all(
+    template.files.map(async (rel) => {
+      if (template.builtin === false && template.id.startsWith("user:")) {
+        return [rel, await api.readUserTemplateText("templates", template.dir, rel)] as const;
+      }
+      const url = `/templates/${template.dir}/${rel}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`读取模板文件失败: ${url} (${res.status})`);
+      }
+      return [rel, await res.text()] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
 }

@@ -277,7 +277,7 @@ function onCheckbox(key: "sunDisc" | "ms", e: Event): void {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
   padding: 2px 0;
 }
@@ -285,7 +285,7 @@ function onCheckbox(key: "sunDisc" | "ms", e: Event): void {
   margin: 0;
 }
 .sky-checkbox input:disabled + span {
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .asset-rel {
   overflow: hidden;

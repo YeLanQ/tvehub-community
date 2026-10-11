@@ -107,12 +107,12 @@ function onSelect(e: Event): void {
   line-height: 1;
   padding: 3px 6px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #888);
-  color: var(--text-dim, #888);
+  border: 1px solid var(--text-dim);
+  color: var(--text-dim);
 }
 .sky-mat-badge:not(.internal) {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .sky-mat-rel {
   flex: 1 1 auto;
@@ -120,7 +120,7 @@ function onSelect(e: Event): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-dim, #999);
+  color: var(--text-dim);
 }
 .sky-mat-btn {
   flex: none;
@@ -128,14 +128,14 @@ function onSelect(e: Event): void {
   line-height: 1.2;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--text-dim, #666);
+  border: 1px solid var(--text-dim);
   background: transparent;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .sky-mat-btn:hover {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .sky-note {
   font-size: 11px;

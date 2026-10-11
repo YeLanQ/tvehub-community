@@ -37,15 +37,15 @@ const emit = defineEmits<{
   height: 26px;
   margin-top: 4px;
   font-size: 12px;
-  color: var(--text, #ddd);
+  color: var(--text);
   background: transparent;
-  border: 1px solid var(--border, #444);
+  border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
 }
 .prefab-instantiate:hover:not(:disabled) {
-  color: var(--accent, #4a9eff);
-  border-color: var(--accent, #4a9eff);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .prefab-instantiate:disabled {
   opacity: 0.5;

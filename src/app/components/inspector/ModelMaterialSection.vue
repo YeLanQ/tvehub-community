@@ -149,14 +149,14 @@ function onClear(): void {
   line-height: 1.4;
   padding: 3px 8px;
   border-radius: 3px;
-  border: 1px solid var(--border, #555);
+  border: 1px solid var(--border);
   background: #333;
-  color: var(--text, #ddd);
+  color: var(--text);
   cursor: pointer;
 }
 .mmat-actions button:hover:not(:disabled) {
-  border-color: var(--accent, #4a9eff);
-  color: var(--accent, #4a9eff);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .mmat-actions button:disabled {
   opacity: 0.5;
@@ -172,7 +172,7 @@ function onClear(): void {
   flex: 1 1 auto;
   min-width: 56px;
   font-size: 11px;
-  color: var(--text, #ddd);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -183,8 +183,8 @@ function onClear(): void {
   line-height: 1;
   padding: 3px 6px;
   border-radius: 3px;
-  border: 1px solid var(--border, #444);
-  color: var(--text-dim, #999);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
 }
 .mmat-select {
   flex: none;
@@ -193,8 +193,8 @@ function onClear(): void {
   font-size: 11px;
   padding: 2px 4px;
   background: #252526;
-  color: var(--text, #ddd);
-  border: 1px solid var(--border, #444);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 3px;
 }
 </style>

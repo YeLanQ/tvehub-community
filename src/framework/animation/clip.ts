@@ -130,7 +130,7 @@ export function parseAnimationClip(v: unknown): AnimationClipData {
 
 /** 深拷贝剪辑（编辑工作副本） */
 export function cloneAnimationClip(c: AnimationClipData): AnimationClipData {
-  return JSON.parse(JSON.stringify(c)) as AnimationClipData;
+  return structuredClone(c) as AnimationClipData;
 }
 
 /** 二分查找：最后一个 t <= time 的关键帧下标（-1 表示在首帧之前） */

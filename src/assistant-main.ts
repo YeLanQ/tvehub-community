@@ -33,7 +33,7 @@ if (isTauri()) {
       try {
         await win.setPosition(new PhysicalPosition(saved.x, saved.y));
       } catch {
-        /* ignore */
+        /* 窗口句柄失效/平台拒绝：用默认位置 */
       }
     }
     // 移动后防抖保存位置

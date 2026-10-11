@@ -321,27 +321,29 @@ export async function loadMaterialParams(rootJson: unknown): Promise<Map<string,
     if (node.type === "meshNode" && typeof node.material === "string" && node.material) refs.add(node.material);
     if (Array.isArray(node.children)) (node.children as unknown[]).forEach(walkMatRefs);
   })(rootJson);
-  for (const rel of refs) {
-    try {
-      const j = await resourceLoader.loadJSON(rel);
-      const doc = parseMaterialDoc(j);
-      if (doc.shader) {
-        const shader = await fetchShaderDoc(doc.shader);
-        if (shader) {
-          doc.type = shader.kind;
-          doc.shaderData = {
-            base: shader.base,
-            include: shader.include,
-            hooks: shader.hooks,
-            properties: shader.properties,
-          };
-          doc.shaderError = shader.error ?? null;
+  await Promise.all(
+    [...refs].map(async (rel) => {
+      try {
+        const j = await resourceLoader.loadJSON(rel);
+        const doc = parseMaterialDoc(j);
+        if (doc.shader) {
+          const shader = await fetchShaderDoc(doc.shader);
+          if (shader) {
+            doc.type = shader.kind;
+            doc.shaderData = {
+              base: shader.base,
+              include: shader.include,
+              hooks: shader.hooks,
+              properties: shader.properties,
+            };
+            doc.shaderError = shader.error ?? null;
+          }
         }
+        materialParams.set(rel, doc);
+      } catch {
+        /* 缺失材质：回退默认 */
       }
-      materialParams.set(rel, doc);
-    } catch {
-      /* 缺失材质：回退默认 */
-    }
-  }
+    }),
+  );
   return materialParams;
 }
