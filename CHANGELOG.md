@@ -6,7 +6,35 @@
 - `pnpm version:bump auto` 按未发布提交的类型自动递增版本（feat→minor、fix→patch、
   破坏性→major，0.x 阶段破坏性按 semver 惯例只升 minor），并把新版本段写进本文件。
 
+## v1.0.0+2（2026-10-12）
+
+### 新特性
+- **playable**: P2 实核上架 ironsource(MRAID 单页)/mintegral(install+gameEnd) + multi 自动打包上传 zip
+- **playable**: 试玩广告第三构建渠道——目标勾选逐目标导出（forms 形态层共享）+engine.playableAd 宿主契约（CTA/可见性暂停/打点上报，SDK 1.4.0）
+- **anim-editor**: 选中关键帧显示通道/时间/值并支持二次编辑
+
+### 性能优化
+- **viewport**: FPS 滑窗统计+空闲降档标注+自适应渲染精度保帧率（换档先于渲染防黑闪）
+
+### 重构
+- **quality**: 全仓扫描修复——深拷贝structuredClone/串行await并发化/主题令牌兜底清理/空catch注释化
+
+### 文档
+- **skills**: unit 步用例数校准 802 例（2026-10-11 实测，标注漂移口径以运行输出为准）
+- **skills**: audit 分诊修复配方入册+改后门禁清单入验证规则；修 check-skills 扩展名截断误报
+- **skills**: 已核平台结论表增鲸鸿动能行（试玩=应用分包模式，不接入）
+- **skills**: 新增 tve-playable-ads 技能组——统一面硬规则+契约层/导出链/平台适配配方，登记路由与漂移映射
+
 ## v1.0.0+1（2026-10-10）
+
+### 文档
+- README 换代 v1.0.0（kp-4 留档 README_KP_4.md）+ runtime/README HostEndpoint 成员数对齐
+- **skills**: 新增语义化版本管理与发版技能单元 tve-release-versioning + drift-map 登记
+
+### 其他
+- gitignore 忽略 docs/（实战笔记独立仓，远程 TvEHub-Practical-Notes）
+
+## v1.0.0+1（2026-10-10，早期同名版本）
 
 ### 新特性
 - **wechat**: 多线程加速改为构建面板勾选项（缺省全主线程，微信多线程设备适配性/普及率不足）——勾选才随包 worker bundle 与 game.json workers 声明，config.workerThread 门控运行期零触达…
