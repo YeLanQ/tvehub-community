@@ -8,7 +8,7 @@ use crate::build::{run_build, BuildJob, JobCtx};
 use crate::build::kernel::release::fallback_uid;
 
 /// 发布模式：资产 uid 重命名（.meta uuid 优先/哈希回退）、场景与材质引用重写、
-/// JSON 紧凑化、模型二进制化（LQENBIN1，.gltf 外部兄弟内联剔除）。
+/// JSON 紧凑化、模型二进制化（LQENBIN1，贴图外置化：bin 无贴图字节）。
 #[test]
 fn build_export_release_renames_and_rewrites() {
     let base = std::env::temp_dir().join(format!("tve-build-rel-{}", std::process::id()));
@@ -31,11 +31,32 @@ fn build_export_release_renames_and_rewrites() {
     fs::write(root.join("assets/materials/M.mat.meta"), r#"{"uuid":"11111111-2222-3333-4444-555555555555"}"#).unwrap();
     fs::write(root.join("assets/textures/a.png"), [9u8; 8]).unwrap();
 
-    // 模型：glb（kind1 包装）/ gltf（外部 .bin+贴图内联）/ obj（kind0 网格）
-    fs::write(root.join("assets/models/cube.glb"), b"glTFfake-glb-bytes").unwrap();
+    // 模型：glb（真容器，内嵌使用中贴图）/ gltf（外部 .bin 合并 + 贴图外置引用）/ obj（kind0 网格）
+    let cube_png: [u8; 4] = [0xAA, 0xAA, 0xAA, 0xAA];
+    let mut cube_blob = cube_png.to_vec();
+    cube_blob.extend_from_slice(&[0x0B; 4]);
+    let cube_glb = crate::scene_pack::build_glb_container(
+        &serde_json::json!({
+            "asset": { "version": "2.0" },
+            "scenes": [{ "nodes": [0] }],
+            "nodes": [{ "mesh": 0 }],
+            "meshes": [{ "primitives": [{ "attributes": { "POSITION": 0 } }] }],
+            "accessors": [{ "bufferView": 1, "componentType": 5126, "count": 1, "type": "VEC3" }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 4 },
+                { "buffer": 0, "byteOffset": 4, "byteLength": 4 },
+            ],
+            "buffers": [{ "byteLength": 8 }],
+            "images": [{ "bufferView": 0, "mimeType": "image/png", "name": "albedo" }],
+            "textures": [{ "source": 0 }],
+            "materials": [{ "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } }],
+        }),
+        &cube_blob,
+    );
+    fs::write(root.join("assets/models/cube.glb"), cube_glb).unwrap();
     fs::write(
         root.join("assets/models/tree.gltf"),
-        r#"{"asset":{"version":"2.0"},"buffers":[{"uri":"tree.bin","byteLength":4}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":4}],"images":[{"uri":"tree.png"}]}"#,
+        r#"{"asset":{"version":"2.0"},"buffers":[{"uri":"tree.bin","byteLength":4}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":4}],"accessors":[{"bufferView":0,"componentType":5126,"count":1,"type":"VEC3"}],"meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],"nodes":[{"mesh":0}],"scenes":[{"nodes":[0]}],"images":[{"uri":"tree.png"}],"textures":[{"source":0}],"materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}}]}"#,
     ).unwrap();
     fs::write(root.join("assets/models/tree.gltf.meta"), r#"{"uuid":"99999999-8888-7777-6666-555555555555"}"#).unwrap();
     fs::write(root.join("assets/models/tree.bin"), [1u8, 2, 3, 4]).unwrap();
@@ -158,27 +179,56 @@ fn build_export_release_renames_and_rewrites() {
     let three_min = fs::read_to_string(out.join("engine/core/three.module.min.js")).unwrap();
     assert!(three_min.contains("/*already minified*/"), "*.min.* 不重复压缩");
 
-    // 模型二进制化：glb → kind1；gltf → 自包含 glb → kind1（兄弟文件剔除）；obj → kind0
+    // 模型二进制化（贴图外置化）：bin 不含贴图字节，贴图以 uid 兄弟文件随发布 +
+    // GLB 内 uri 指向 uid 新名；gltf 外部 .bin 合并剔除；obj → kind0
+    let cube_uid = fallback_uid("assets/models/cube.glb");
+    let cube_albedo_uid = fallback_uid("assets/models/cube_albedo.png");
     assert!(!out.join("assets/models/cube.glb").exists(), "glb 原名不保留");
     assert!(!out.join("assets/models/tree.gltf").exists());
     assert!(!out.join("assets/models/rock.obj").exists());
-    assert!(!out.join("assets/models/tree.bin").exists(), "gltf 外部 .bin 已内联剔除");
-    assert!(!out.join("assets/models/tree.png").exists(), "gltf 外部贴图已内联剔除");
-    let cube_bin = fs::read(out.join("assets/models/").join(format!("{}.bin", fallback_uid("assets/models/cube.glb")))).unwrap();
+    assert!(!out.join("assets/models/tree.bin").exists(), "gltf 外部 .bin 已并入剔除");
+    let tree_png_uid = fallback_uid("assets/models/tree.png");
+    assert!(
+        out.join(format!("assets/models/{tree_png_uid}.png")).is_file(),
+        "使用中外贴图保留（uid 名）"
+    );
+    assert_eq!(
+        fs::read(out.join(format!("assets/models/{tree_png_uid}.png"))).unwrap(),
+        [7u8; 4],
+        "外贴图字节原样"
+    );
+
+    let cube_bin = fs::read(out.join(format!("assets/models/{cube_uid}.bin"))).unwrap();
     assert_eq!(&cube_bin[0..8], b"LQENBIN1");
     assert_eq!(u32::from_le_bytes(cube_bin[8..12].try_into().unwrap()), 1, "glb → kind1");
-    assert_eq!(&cube_bin[16..20], b"glTF", "kind1 payload 为原始 GLB");
+    assert_eq!(&cube_bin[16..20], b"glTF", "kind1 payload 为 GLB 容器");
+    assert!(!cube_bin.windows(4).any(|w| w == cube_png), "内嵌使用中贴图外置：bin 不含 PNG 字节");
+    assert!(cube_bin.windows(4).any(|w| w == [0x0B; 4]), "几何字节保留");
+    let cube_doc = crate::scene_pack::glb_json_doc(&cube_bin[16..]).unwrap();
+    assert_eq!(
+        cube_doc["images"][0]["uri"],
+        format!("{cube_albedo_uid}.png"),
+        "GLB 内 uri 改写为贴图 uid 名"
+    );
+    assert!(
+        out.join(format!("assets/models/{cube_albedo_uid}.png")).is_file(),
+        "提取的内嵌贴图以 uid 兄弟文件随发布"
+    );
+
     let tree_bin = fs::read(out.join("assets/models/99999999-8888-7777-6666-555555555555.bin")).unwrap();
     assert_eq!(&tree_bin[0..8], b"LQENBIN1");
     assert_eq!(u32::from_le_bytes(tree_bin[8..12].try_into().unwrap()), 1, "gltf → 自包含 glb → kind1");
     assert_eq!(&tree_bin[16..20], b"glTF");
-    // 内嵌 .bin 数据（[1,2,3,4]）出现在自包含 GLB 的 BIN chunk 中
+    // 外部 .bin 数据（[1,2,3,4]）并入 blob；贴图字节不内嵌
     assert!(tree_bin.windows(4).any(|w| w == [1, 2, 3, 4]));
+    assert!(!tree_bin.windows(4).any(|w| w == [7u8; 4]), "贴图字节不内嵌");
+    let tree_doc = crate::scene_pack::glb_json_doc(&tree_bin[16..]).unwrap();
+    assert_eq!(tree_doc["images"][0]["uri"], format!("{tree_png_uid}.png"), "外贴图 uri 改写为 uid 名");
     let rock_bin = fs::read(out.join("assets/models/").join(format!("{}.bin", fallback_uid("assets/models/rock.obj")))).unwrap();
     assert_eq!(u32::from_le_bytes(rock_bin[8..12].try_into().unwrap()), 0, "obj → kind0 网格");
     assert_eq!(u32::from_le_bytes(rock_bin[24..28].try_into().unwrap()), 1, "1 个三角面");
     // 场景引用重写为 .bin 路径
-    assert!(scene_text.contains(&format!("assets/models/{}.bin", fallback_uid("assets/models/cube.glb"))));
+    assert!(scene_text.contains(&format!("assets/models/{cube_uid}.bin")));
     assert!(scene_text.contains("assets/models/99999999-8888-7777-6666-555555555555.bin"));
     assert!(!scene_text.contains("tree.gltf") && !scene_text.contains("rock.obj"));
     assert_eq!(result.bin_converted.len(), 3, "三个模型均转换");

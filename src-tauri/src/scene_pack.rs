@@ -115,7 +115,7 @@ pub(crate) const TEXTURE_FIELDS: [&str; 5] =
 /// - 材质引用的贴图二进制（缺失跳过，player 回退无贴图）；
 /// - 模型资产（glb/gltf/fbx/obj）二进制随导出——player 按同相对路径 fetch 后解析回放
 ///   （含内嵌动画）；缺失项跳过（player 渲染空组并告警）；
-/// - .gltf（JSON 文本）外部引用的 buffers[].uri / images[].uri 指向模型同目录
+/// - .gltf/.glb 外部引用的 buffers[].uri / images[].uri 指向模型同目录
 ///   文件（.bin/贴图），一并随拷，保持与编辑器“同目录资源”解析规则一致。
 pub(crate) fn collect_scene_assets(
     root_path: &Path,
@@ -204,24 +204,33 @@ pub(crate) fn collect_scene_assets(
             missing.push(rel.clone());
             continue;
         };
-        if rel.to_ascii_lowercase().ends_with(".gltf") {
-            if let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                for key in ["buffers", "images"] {
-                    let Some(items) = doc.get(key).and_then(|v| v.as_array()) else {
+        // gltf（JSON 文本）与 glb（GLB 容器）都解析外部引用：buffers[].uri /
+        // images[].uri 指向模型同目录文件（.bin/贴图），一并随拷，保持与编辑器
+        // 「同目录资源」解析规则一致（否则预览/导出的 GLB 模型丢外部贴图）
+        let lower = rel.to_ascii_lowercase();
+        let refs_doc = if lower.ends_with(".gltf") {
+            serde_json::from_slice::<serde_json::Value>(&bytes).ok()
+        } else if lower.ends_with(".glb") {
+            glb_json_doc(&bytes)
+        } else {
+            None
+        };
+        if let Some(doc) = refs_doc {
+            for key in ["buffers", "images"] {
+                let Some(items) = doc.get(key).and_then(|v| v.as_array()) else {
+                    continue;
+                };
+                for item in items {
+                    let Some(uri) = item.get("uri").and_then(|v| v.as_str()) else {
                         continue;
                     };
-                    for item in items {
-                        let Some(uri) = item.get("uri").and_then(|v| v.as_str()) else {
-                            continue;
-                        };
-                        if let Some(sibling) = gltf_sibling_rel(rel, uri) {
-                            if sibling != *rel && !binaries.contains_key(&sibling) {
-                                match read_asset_bytes(root_path, &sibling) {
-                                    Ok(b) => {
-                                        binaries.insert(sibling, b);
-                                    }
-                                    Err(_) => missing.push(sibling),
+                    if let Some(sibling) = gltf_sibling_rel(rel, uri) {
+                        if sibling != *rel && !binaries.contains_key(&sibling) {
+                            match read_asset_bytes(root_path, &sibling) {
+                                Ok(b) => {
+                                    binaries.insert(sibling, b);
                                 }
+                                Err(_) => missing.push(sibling),
                             }
                         }
                     }
@@ -380,7 +389,45 @@ pub(crate) fn split_wasm_base64_files(
     Ok(())
 }
 
-/// .gltf 内外部引用（buffers[].uri / images[].uri）→ 模型同目录的资产相对路径。
+/// GLB 容器（magic "glTF" + JSON chunk）→ 内嵌 JSON 文档。
+/// 非容器/截断/解析失败返回 None（调用方按无外部引用处理）。
+pub(crate) fn glb_json_doc(bytes: &[u8]) -> Option<serde_json::Value> {
+    if bytes.len() < 20 || &bytes[0..4] != b"glTF" {
+        return None;
+    }
+    let jlen = u32::from_le_bytes(bytes[12..16].try_into().ok()?) as usize;
+    if &bytes[16..20] != b"JSON" {
+        return None;
+    }
+    let json_bytes = bytes.get(20..20usize.checked_add(jlen)?)?;
+    serde_json::from_slice(json_bytes).ok()
+}
+
+/// 打包 GLB 容器：头 + JSON chunk（空格填充）+ BIN chunk（零填充）。
+/// 与 [`glb_json_doc`] 互为逆操作（测试与发布模型管线共用）。
+pub(crate) fn build_glb_container(json: &serde_json::Value, bin: &[u8]) -> Vec<u8> {
+    let mut json_bytes = json.to_string().into_bytes();
+    let jpad = (4 - json_bytes.len() % 4) % 4;
+    json_bytes.resize(json_bytes.len() + jpad, 0x20);
+    let bpad = (4 - bin.len() % 4) % 4;
+    let total = 12 + 8 + json_bytes.len() + if bin.is_empty() { 0 } else { 8 + bin.len() + bpad };
+    let mut out: Vec<u8> = Vec::with_capacity(total);
+    out.extend_from_slice(b"glTF");
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&(total as u32).to_le_bytes());
+    out.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(&0x4E4F_534Au32.to_le_bytes());
+    out.extend_from_slice(&json_bytes);
+    if !bin.is_empty() {
+        out.extend_from_slice(&((bin.len() + bpad) as u32).to_le_bytes());
+        out.extend_from_slice(&0x004E_4942u32.to_le_bytes());
+        out.extend_from_slice(bin);
+        out.resize(total, 0);
+    }
+    out
+}
+
+/// .gltf/.glb 内外部引用（buffers[].uri / images[].uri）→ 模型同目录的资产相对路径。
 /// data:/绝对地址、反斜杠与越出资产根（..）的引用返回 None（跳过不拷贝）。
 pub(crate) fn gltf_sibling_rel(model_rel: &str, uri: &str) -> Option<String> {
     if uri.is_empty() || uri.contains('\\') || uri.contains("://") || uri.starts_with("data:") {
@@ -443,7 +490,7 @@ fn hex_val(b: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use super::{collect_scene_assets, gltf_sibling_rel, percent_decode, split_wasm_base64_files, write_export_dir};
+    use super::{build_glb_container, collect_scene_assets, glb_json_doc, gltf_sibling_rel, percent_decode, split_wasm_base64_files, write_export_dir};
 
     /// .wasm 键（base64）从文本 files 分流进 binaries 按字节写盘；非 wasm 键不动；
     /// 非法 base64 报错。
@@ -552,6 +599,49 @@ mod tests {
             binaries.keys().collect::<Vec<_>>()
         );
         assert!(missing.is_empty(), "无缺失资产（实际 {missing:?}）");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// GLB 容器的外部贴图引用必须随产物打包：只解析 .gltf 文本会漏掉 GLB
+    /// （容器 JSON 块里的 images[].uri），预览/导出的 GLB 模型会整体丢贴图。
+    #[test]
+    fn collect_scene_assets_packs_glb_external_images() {
+        let root = std::env::temp_dir().join(format!("tve-glb-pack-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("assets/models")).unwrap();
+        let glb_json = serde_json::json!({
+            "asset": { "version": "2.0" },
+            "images": [ { "uri": "albedo.png" }, { "uri": "https://cdn.example.com/x.png" } ],
+        });
+        let glb = build_glb_container(&glb_json, &[0u8; 4]);
+        fs::write(root.join("assets/models/cube.glb"), glb).unwrap();
+        fs::write(root.join("assets/models/albedo.png"), [7u8; 8]).unwrap();
+
+        let scene = serde_json::json!({
+            "type": "scene",
+            "root": { "type": "meshNode", "id": "m", "source": "model", "model": "assets/models/cube.glb" },
+        })
+        .to_string();
+        let mut files = std::collections::HashMap::new();
+        let mut binaries = std::collections::HashMap::new();
+        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries);
+
+        assert!(
+            binaries.contains_key("assets/models/cube.glb"),
+            "模型本体入 binaries"
+        );
+        assert!(
+            binaries.contains_key("assets/models/albedo.png"),
+            "GLB 外部贴图应随产物打包（binaries: {:?}）",
+            binaries.keys().collect::<Vec<_>>()
+        );
+        assert!(missing.is_empty(), "无缺失资产（实际 {missing:?}）");
+
+        // 容器解析往返：glb_json_doc 还原 JSON 文档
+        let doc = glb_json_doc(&fs::read(root.join("assets/models/cube.glb")).unwrap()).unwrap();
+        assert_eq!(doc["images"][0]["uri"], "albedo.png");
+        assert!(glb_json_doc(b"not a glb").is_none());
 
         let _ = fs::remove_dir_all(&root);
     }

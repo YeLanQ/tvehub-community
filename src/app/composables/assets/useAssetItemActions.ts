@@ -245,14 +245,7 @@ export function useAssetItemActions(ctx: UseAssetItemActionsCtx): AssetItemActio
       const dir = modelDirOf(item.path);
       const rel = (n: string) => (dir ? `${dir}/${n}` : n);
       const result = await compressModelToDraco(
-        ext === "glb"
-          ? { ext, bytes: new Uint8Array(bytes), originalSize: bytes.byteLength }
-          : {
-              ext,
-              rel: item.path,
-              dirUrl: `${assetUrl(dir)}/`,
-              originalSize: bytes.byteLength,
-            },
+        { rel: item.path, dirUrl: `${assetUrl(dir)}/`, originalSize: bytes.byteLength },
         selection,
       );
       // 产物 <名>.draco.glb；重名自动加序号（与导入复制同规则）

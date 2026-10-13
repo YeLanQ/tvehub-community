@@ -138,24 +138,39 @@ self.onmessage = async (e: MessageEvent) => {
         const loader = new GLTFLoader();
         loader.setMeshoptDecoder(MeshoptDecoder);
 
-        // 外部资源（贴图/.bin）按相对 URL 拼到 resourceBaseUrl
+        // 外部资源（贴图/.bin）按相对 URL 拼到 resourceBaseUrl。
+        // parse 的 path 必须传空：GLTFLoader 会用 LoaderUtils.resolveURL 把 path
+        // 纯字符串拼进资源地址后才过 URL 修饰器——拼了 base 的地址在本修饰器里
+        // 无法可靠归一化（见下）。传空让修饰器拿到原始 uri，按资产语义归一化。
+        // 修饰器不能用 new URL(url, base)：asset URL 的项目路径整段百分号编码，
+        // URL 的 ../ 回溯会在编码段内错位弹栈，必须按字符串段处理。
         if (resourceBaseUrl) {
+          const base = resourceBaseUrl.endsWith("/") ? resourceBaseUrl.slice(0, -1) : resourceBaseUrl;
           const manager = new THREE.LoadingManager();
           manager.setURLModifier((url: string) => {
-            // 绝对 URL（含协议）直接返回
-            if (/^https?:\/\//.test(url) || url.startsWith("asset:")) return url;
-            // 相对 URL 拼到 resourceBaseUrl
-            const base = resourceBaseUrl.endsWith("/")
-              ? resourceBaseUrl
-              : resourceBaseUrl + "/";
-            return new URL(url, base).href;
+            const raw = url.split("?")[0];
+            if (!raw || /^(https?:|data:|blob:|asset:)/i.test(raw)) return url;
+            let rel = raw;
+            try {
+              rel = decodeURIComponent(raw);
+            } catch {
+              /* 非法百分号序列按原文处理 */
+            }
+            const parts: string[] = [];
+            for (const seg of rel.replace(/\\/g, "/").split("/")) {
+              if (seg === "" || seg === ".") continue;
+              if (seg === "..") parts.pop();
+              else parts.push(seg);
+            }
+            if (!parts.length) return url;
+            return `${base}/${parts.map(encodeURIComponent).join("/")}`;
           });
           loader.manager = manager;
         }
 
         loader.parse(
           buffer,
-          resourceBaseUrl ?? "",
+          "",
           (gltf) => {
             try {
               const sceneJson = gltf.scene.toJSON();

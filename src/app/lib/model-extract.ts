@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Document, Texture } from "@gltf-transform/core";
-import { assetUrl, fetchAssetBinary } from "../../lib/asset-url";
+import { assetUrl } from "../../lib/asset-url";
 import { api } from "../../lib/api";
 import { DEFAULT_MATERIAL_PARAMS, DEFAULT_SHADER_REL, type MaterialParams } from "../../framework/material";
 import { bytesToBase64, createBrowserModelIO } from "./model-draco";
@@ -139,11 +139,11 @@ export async function extractAndWriteModelMaterials(
   if (ext !== "glb" && ext !== "gltf") {
     throw new Error(`仅 glTF/GLB 模型支持材质提取: ${modelRel}`);
   }
-  const io = await createBrowserModelIO(ext === "gltf" ? `${assetUrl(modelDirOf(modelRel))}/` : undefined);
-  const doc =
-    ext === "glb"
-      ? await io.readBinary(new Uint8Array((await fetchAssetBinary(modelRel)) ?? new ArrayBuffer(0)))
-      : await io.read(assetUrl(modelRel));
+  // glb/gltf 统一经 io.read（asset:// URL）：GLB 含外部 images 引用时 readBinary
+  // 走 binaryToJSON 会拒绝解析（Cannot resolve external images），读文件路径才能
+  // 按「模型同目录 asset:// URL」把外部贴图一并取回
+  const io = await createBrowserModelIO(`${assetUrl(modelDirOf(modelRel))}/`);
+  const doc = await io.read(assetUrl(modelRel));
   const extracted = extractMaterialDocs(doc);
 
   const stem = sanitizeFileSeg(

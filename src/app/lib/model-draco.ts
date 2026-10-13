@@ -122,19 +122,16 @@ export interface DracoCompressResult {
 
 /**
  * 压缩模型资产（编辑器 UI 入口），产物为自包含 GLB（外部贴图/.bin 一并内嵌）：
- * - glb：调用方传已拉取的字节（自包含，无外部资源）；
- * - gltf：经 asset:// URL 读取，外部 .bin/贴图按「同目录 asset:// URL」解析
- *   （dirUrl = 所在目录的 asset:// URL，以 / 结尾）。
+ * glb/gltf 统一经 asset:// URL 读取（外部 .bin/贴图按「同目录 asset:// URL」解析，
+ * dirUrl = 所在目录的 asset:// URL，以 / 结尾）——GLB 含外部 images 引用时
+ * readBinary 走 binaryToJSON 会拒绝解析，必须走读文件路径。
  */
 export async function compressModelToDraco(
-  source:
-    | { ext: "glb"; bytes: Uint8Array; originalSize: number }
-    | { ext: "gltf"; rel: string; dirUrl: string; originalSize: number },
+  source: { rel: string; dirUrl: string; originalSize: number },
   opts: DracoCompressOptions,
 ): Promise<DracoCompressResult> {
-  const io = await createBrowserModelIO(source.ext === "gltf" ? source.dirUrl : undefined);
-  const doc =
-    source.ext === "glb" ? await io.readBinary(source.bytes) : await io.read(assetUrl(source.rel));
+  const io = await createBrowserModelIO(source.dirUrl);
+  const doc = await io.read(assetUrl(source.rel));
   const bytes = await compressDocument(doc, opts, io);
   return { bytes, originalSize: source.originalSize, compressedSize: bytes.byteLength };
 }

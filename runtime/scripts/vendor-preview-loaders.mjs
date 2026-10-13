@@ -26,7 +26,7 @@ const threeDir = join(ROOT, "node_modules", "three");
 const outDir = join(ENGINE_DIR, "runtime", "loaders");
 const coreDir = join(ENGINE_DIR, "core");
 
-/** three 运行时构建（public/engine/core/）：字节与 npm 包一致，不改写 */
+/** three 运行时构建（public/engine/core/）：THREE_BUILD_PATCHES 锚点补丁外与 npm 包字节一致 */
 const THREE_BUILDS = ["three.core.min.js", "three.module.min.js", "three.webgpu.min.js"];
 
 // 源路径（相对 examples/jsm）→ 目标文件名 + 相对 import 重写规则
@@ -49,6 +49,56 @@ const FILES = [
  *  一次性成本（编辑器视口走 wasm 快路径，不受影响）。 */
 const DRACO_DECODER_FILES = ["draco_decoder.js"];
 
+/** three 上游缺陷的构建期补丁（锚点失配显式失败——three 升级后须按新文本更新）：
+ *  1. three.core.min.js ImageBitmapLoader 成功链缺 return——缓存 promise 的解析值
+ *     为 undefined，同 URL 并发加载命中在途分支时 onLoad(undefined) →
+ *     new Texture(undefined) → 渲染期逐帧 "no image data found"（proto=undefined）。
+ *     注意 esbuild 会把 `;return s` 压成 `,s}` 逗号表达式——验证产物含补丁不能搜 `;return`。
+ *  2. three.module.min.js setTexture2D 空图守卫 `null===e` 放过了 undefined
+ *     （undefined !== null 会坠入 image.complete 抛 TypeError）——放宽为 null==e
+ *     并在告警里带 name/uuid/proto 身份（proto=undefined ⟺ image 为 undefined）。
+ *  3. GLTFLoader 纹理 onLoad 空图拒绝：异常图像不再建残缺纹理（材质回退基础色），
+ *     loadTexture 的 .catch(()=>null) 保证单贴图失败不炸整个模型。 */
+const THREE_BUILD_PATCHES = [
+  {
+    file: "three.core.min.js",
+    name: "ImageBitmapLoader 并发缓存返回值",
+    anchor: "`image-bitmap:${t}`,s),e&&e(s),r.manager.itemEnd(t)})",
+    replacement: "`image-bitmap:${t}`,s),e&&e(s),r.manager.itemEnd(t);return s})",
+  },
+  {
+    file: "three.module.min.js",
+    name: "setTexture2D 空图守卫放宽 + 身份日志",
+    anchor: '{const e=t.image;if(null===e)v("WebGLRenderer: Texture marked for update but no image data found.");',
+    replacement:
+      '{const e=t.image;if(null==e)v("WebGLRenderer: Texture marked for update but no image data found. name="+(t&&t.name)+" uuid="+(t&&t.uuid)+" proto="+((e&&e.constructor&&e.constructor.name)||typeof e));',
+  },
+];
+
+/** GLTFLoader 文本补丁（vendored 前按上游原文应用；tab 缩进） */
+const LOADER_TEXT_PATCHES = [
+  {
+    file: "loaders/GLTFLoader.js",
+    name: "纹理 onLoad 空图拒绝",
+    anchor:
+      "\t\t\t\t\tonLoad = function ( imageBitmap ) {\n\n\t\t\t\t\t\tconst texture = new Texture( imageBitmap );",
+    replacement:
+      "\t\t\t\t\tonLoad = function ( imageBitmap ) {\n\n\t\t\t\t\t\tif ( imageBitmap === undefined || imageBitmap === null ) {\n\n\t\t\t\t\t\t\treject( new Error( 'THREE.GLTFLoader: texture onLoad 收到空图像（上游缓存缺陷兜底），材质回退基础色' ) );\n\n\t\t\t\t\t\t\treturn;\n\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tconst texture = new Texture( imageBitmap );",
+  },
+];
+
+/** 锚点式文本补丁应用（失配即抛——静默漂移比构建失败更危险） */
+function applyTextPatches(fileName, text, patches) {
+  let out = text;
+  for (const p of patches.filter((x) => x.file === fileName)) {
+    if (!out.includes(p.anchor)) {
+      throw new Error(`${fileName} 补丁锚点失配（${p.name}）——three 升级后请按新文本更新 vendor-preview-loaders.mjs`);
+    }
+    out = out.replace(p.anchor, p.replacement);
+  }
+  return out;
+}
+
 export function vendorPreviewLoaders(why = "") {
   const threeVersion = JSON.parse(readFileSync(join(threeDir, "package.json"), "utf8")).version;
   const header = (src) =>
@@ -61,6 +111,8 @@ export function vendorPreviewLoaders(why = "") {
   for (const { src, rewrites } of FILES) {
     const from = join(threeDir, "examples", "jsm", src);
     let text = readFileSync(from, "utf8");
+    // 上游缺陷补丁（按上游原文锚定，先于 import 重写）
+    text = applyTextPatches(src, text, LOADER_TEXT_PATCHES);
     // three 裸导入（含多行 import 块结尾的 "} from 'three';"）→ 本地 three 运行时
     text = text.replace(/from\s+'three';/g, "from '../../core/three.module.min.js';");
     for (const [fromRel, toRel] of Object.entries(rewrites)) {
@@ -93,13 +145,15 @@ export function vendorPreviewLoaders(why = "") {
     if (writeIfChanged(join(dracoDir, name), buf)) written++;
   }
 
-  // three 运行时构建：字节复制（不改写），含 WebGPU 构建供预览/导出的 WebGPU 后端使用
+  // three 运行时构建：按补丁表改写后写入（上游缺陷见 THREE_BUILD_PATCHES 注释），
+  // 含 WebGPU 构建供预览/导出的 WebGPU 后端使用
   mkdirSync(coreDir, { recursive: true });
   for (const name of THREE_BUILDS) {
-    const buf = readFileSync(join(threeDir, "build", name));
-    if (writeIfChanged(join(coreDir, name), buf)) written++;
+    let text = readFileSync(join(threeDir, "build", name), "utf8");
+    text = applyTextPatches(name, text, THREE_BUILD_PATCHES);
+    if (writeIfChanged(join(coreDir, name), text)) written++;
     // 依赖校验：构建只允许依赖同目录的 three.core.min.js（无裸导入，浏览器可直接加载）
-    const deps = [...buf.toString("utf8").matchAll(/from\s*"([^"]+)"/g)]
+    const deps = [...text.matchAll(/from\s*"([^"]+)"/g)]
       .map((m) => m[1])
       .filter((s) => s !== "./three.core.min.js");
     if (deps.length) {

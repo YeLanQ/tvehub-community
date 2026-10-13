@@ -69,9 +69,11 @@ pub(in crate::build) fn apply_release(
         uid
     };
 
-    // 模型二进制化（LQENBIN1）：glb/gltf/obj → <uid>.bin；被内联的外部兄弟文件
-    // （.gltf 的 .bin/贴图）从产物剔除（未被他处引用时）
+    // 模型二进制化（LQENBIN1，贴图外置化：bin 不含贴图字节）：glb/gltf → <uid>.bin；
+    // 被并入的外部 buffer（merged）与判定未使用的贴图（unused）从产物剔除
+    //（他处材质文本仍引用时保留）
     let mut inlined_sibs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut pruned_sibs: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut model_bins: HashMap<String, Vec<u8>> = HashMap::new(); // 旧 rel → LQENBIN1 字节
     let mut model_rels: Vec<String> = binaries
         .keys()
@@ -80,10 +82,13 @@ pub(in crate::build) fn apply_release(
         .collect();
     model_rels.sort();
     for rel in &model_rels {
-        if let Some((bin, inlined)) = crate::model_bin::convert_model_to_bin(rel, binaries) {
-            model_bins.insert(rel.clone(), bin);
-            for s in inlined {
+        if let Some(conv) = crate::model_bin::convert_model_to_bin(rel, binaries) {
+            model_bins.insert(rel.clone(), conv.bin);
+            for s in conv.merged_sibs {
                 inlined_sibs.insert(s);
+            }
+            for s in conv.unused_sibs {
+                pruned_sibs.insert(s);
             }
         }
     }
@@ -97,6 +102,7 @@ pub(in crate::build) fn apply_release(
             !is_runtime_code(rel)
                 && !is_runtime_support_data(rel)
                 && !inlined_sibs.contains(*rel)
+                && !pruned_sibs.contains(*rel)
                 && rel.as_str() != "script-graph.json"
         })
         .cloned()
@@ -112,8 +118,13 @@ pub(in crate::build) fn apply_release(
     }
     bin_converted.extend(model_bins.keys().cloned());
 
-    // 被内联兄弟：若未被他处材质文本引用则移除（不进产物）
-    for s in &inlined_sibs {
+    // 模型 GLB 内的贴图 uri 改写为兄弟文件的 uid 新名（重命名表就绪后、键替换前）
+    for (old_rel, bin) in model_bins.iter_mut() {
+        crate::model_bin::rewrite_model_texture_urls(old_rel, bin, &renames);
+    }
+
+    // 被内联/剔除兄弟：若未被他处材质文本引用则移除（不进产物）
+    for s in inlined_sibs.iter().chain(pruned_sibs.iter()) {
         let mat_refs_it = files.values().any(|t| t.contains(s));
         if !mat_refs_it {
             binaries.remove(s);

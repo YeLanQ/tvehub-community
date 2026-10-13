@@ -15,6 +15,7 @@ import { logger } from "../../platform_abstraction/logger";
 import { modelDirOf, modelExtOf, type ModelMaterialInfo, type ModelMeta } from "./types";
 import { modelLoaderRegistry, type ModelLoadContext } from "./loaders";
 import { parseGltfInWorker } from "./model-decode-worker-bridge";
+import { resolveSiblingRel } from "./model-sibling-url";
 
 /** 应用层注入的文件访问（asset:// 协议直读；与纹理读取器同构） */
 export interface ModelFileAccess {
@@ -165,8 +166,9 @@ export class ModelManager {
     const ctx: ModelLoadContext = { manager, resourcePath: dir ? `${dir}/` : "" };
 
     // glTF/GLB：优先 Worker 解析（避免大模型卡主线程）；其他格式主线程
+    // 尾斜杠必须保留：GLTFLoader/LoaderUtils 是纯字符串拼接，不补分隔符
     const isGltf = ext === "gltf" || ext === "glb";
-    const resourceBaseUrl = dir && access.urlFor(dir) ? `${access.urlFor(dir)}` : "";
+    const resourceBaseUrl = dir && access.urlFor(dir) ? `${access.urlFor(dir)}/` : "";
     const data = isGltf
       ? await parseGltfInWorker(buffer, ctx, resourceBaseUrl)
       : await def.load(buffer, ctx);
@@ -215,27 +217,6 @@ export class ModelManager {
     this.cache.clear();
     this.loading.clear();
   }
-}
-
-/**
- * 把加载器给出的资源地址解析为「模型同目录资产」的相对路径。
- * 绝对地址（http/data/blob 等）与无法归一化的地址返回 null（调用方放行原地址）；
- * 相对地址按 POSIX 规则归一化（支持子目录与 ../ 回溯，越出资产根由后端沙箱拦截）。
- */
-function resolveSiblingRel(modelDir: string, url: string): string | null {
-  const raw = url.split("?")[0];
-  if (!raw || /^(https?:|data:|blob:|file:)/i.test(raw)) return null;
-  const rel = decodeURIComponent(raw).replace(/\\/g, "/").replace(/^\.\//, "");
-  if (!rel || /^[a-zA-Z]:/.test(rel)) return null;
-  const joined = modelDir ? `${modelDir}/${rel}` : rel;
-  const parts: string[] = [];
-  for (const seg of joined.split("/")) {
-    if (seg === "" || seg === ".") continue;
-    if (seg === "..") parts.pop();
-    else parts.push(seg);
-  }
-  if (!parts.length) return null;
-  return parts.join("/");
 }
 
 /** three 材质类型 → 可读标签（材质摘要展示用） */
