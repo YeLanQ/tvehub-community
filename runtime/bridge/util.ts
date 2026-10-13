@@ -39,10 +39,16 @@ export class Emitter {
   emit(type: string, event: unknown): boolean {
     const set = this._map.get(type);
     if (!set || set.size === 0) return false;
+    // DOM EventTarget 约定：监听器 this = 事件 target。three 的 ImageLoader 在
+    // load 回调里以 this 取加载完成的 image（onLoad(this)、并发等待队列以 this
+    // 为键），裸调用（严格模式 this=undefined）会让纹理拿到 undefined 的
+    // image → GLB 模型贴图全黑。
+    const payload = event as { target?: unknown } | null | undefined;
+    const thisArg = (payload && payload.target) || undefined;
     // 拷贝后派发：监听器内的 off 不打断本轮遍历
     for (const fn of [...set]) {
       try {
-        fn(event);
+        fn.call(thisArg, event);
       } catch (e) {
         bridgeLog("error", "[runtime-bridge] 监听器异常:", type, e);
       }

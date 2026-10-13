@@ -104,10 +104,23 @@ export function createImageBitmapShim(input: unknown /* , options */): Promise<u
   return loadNativeImage(bytes, sniffMime(""));
 }
 
+/** src 属性描述符：自有 → 原型链逐级上溯。wx.createImage 的 src 是原型访问器，
+ *  只查自有描述符会把它误判为"不可接管"而退化包装器——包装器不是纹理源，
+ *  WebGL texImage2D 报 Overload resolution failed（GLB 外部贴图全黑根因）。 */
+function findSrcDescriptor(native: object): PropertyDescriptor | undefined {
+  let cur: object | null = native;
+  while (cur) {
+    const desc = Object.getOwnPropertyDescriptor(cur, "src");
+    if (desc) return desc;
+    cur = Object.getPrototypeOf(cur);
+  }
+  return undefined;
+}
+
 /** 同对象增强成功后的元素形态：src 访问器做内联表桥接，事件面经 Emitter */
 function enhanceImageInPlace(native: NativeImageLike): boolean {
   const em = new Emitter();
-  const desc = Object.getOwnPropertyDescriptor(native, "src");
+  const desc = findSrcDescriptor(native);
   const originalSet = desc && typeof desc.set === "function" ? desc.set.bind(native) : null;
   if (!originalSet) return false; // src 非 accessor（平台靠它触发加载）→ 无法桥接
   try {

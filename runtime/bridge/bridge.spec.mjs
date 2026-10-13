@@ -3,7 +3,8 @@
 // - assertHost：端点缺方法注册即抛错
 // - host 缺席：核心安装整体空转（node 环境无副作用）
 // - 首个 canvas 归渲染器：createElement(NS)("canvas") 首调返回屏上画布，后续走离屏链
-// - 图片：同对象增强（src 访问器平台）+ 内联表桥接（data URL）；退化包装器（src 不可重定义）
+// - 图片：同对象增强（src 访问器平台，含自有与原型两种形态——真实 wx.createImage
+//   的 src 在原型上）+ 内联表桥接（data URL）；退化包装器（src 不可重定义）
 // - createImageBitmap：解析出原生平台 image（纹理源身份）
 // - 音频：getter-only resume 平台形态下 Proxy 门面不抛错、resume 返回 Promise、state 转 running
 // - fetch：内联资产表命中（含相对路径归一化）
@@ -256,6 +257,86 @@ check(
     "图片退化：src 不可重定义 → 包装器（桥接仍生效）",
     wrapped !== readOnly && wrapped.__tveNativeImage === readOnly,
   );
+}
+
+// 图片同对象增强：src 访问器在原型上（真实 wx.createImage 形态，自有描述符取
+// 不到）→ 必须仍走增强、返回原生对象本体（合法纹理源）。回归锚：只查自有描述
+// 符曾把该平台形态误判为不可接管 → 包装器进 WebGL 报 Overload resolution
+// failed → GLB 外部贴图全黑
+{
+  class ProtoImage {
+    constructor() {
+      this.width = 0;
+      this.height = 0;
+      this.__nativeImage = true;
+      this.style = {};
+    }
+    get src() {
+      return this.__src || "";
+    }
+    set src(v) {
+      this.__src = String(v);
+      mock.__images.push(this.__src);
+      if (this.__src.startsWith("data:")) {
+        this.width = 4;
+        this.height = 4;
+        setTimeout(() => this.onload && this.onload({ width: 4, height: 4 }), 0);
+      } else {
+        setTimeout(() => this.onerror && this.onerror({ errMsg: "fs miss" }), 0);
+      }
+    }
+  }
+  const protoImg = new ProtoImage();
+  const { host: h } = await import("./host.ts");
+  const realCreate = h().createImage;
+  h().createImage = () => protoImg;
+  const el = globalThis.document.createElement("img");
+  h().createImage = realCreate;
+  const protoLoad = new Promise((resolve) => {
+    el.addEventListener("load", () => resolve("load"));
+    el.addEventListener("error", () => resolve("error"));
+  });
+  el.src = "assets/tex.png";
+  const protoOutcome = await Promise.race([protoLoad, new Promise((r) => setTimeout(() => r("timeout"), 1000))]);
+  check(
+    "图片增强：src 访问器在原型上（真实 wx 形态）→ 同对象增强且 data URL 桥接",
+    protoOutcome === "load" && el === protoImg && el.__nativeImage === true
+      && mock.__images[mock.__images.length - 1].startsWith("data:image/png;base64,"),
+    `outcome=${protoOutcome}`,
+  );
+  // DOM EventTarget 约定：监听器 this = 事件 target。three ImageLoader 的 load
+  // 回调以 this 取加载完成的 image（onLoad(this)）——裸调用传 undefined，
+  // 纹理拿到 undefined 的 image → 模型贴图全黑（人工修复逆向出的另一半根因）
+  let thisArg = "unset";
+  el.addEventListener("load", function () {
+    thisArg = this;
+  });
+  el.src = "assets/tex.png";
+  await new Promise((r) => setTimeout(r, 20));
+  check(
+    "图片事件：监听器 this = 原生 image（three ImageLoader 以 this 取贴图）",
+    thisArg === protoImg,
+    `thisArg=${String(thisArg)}`,
+  );
+}
+
+// Emitter 派发面直测：this = event.target（DOM EventTarget 约定的单元锚）
+{
+  const { Emitter } = await import("./util.ts");
+  const em = new Emitter();
+  const marker = { mark: true };
+  let gotThis = "unset";
+  em.on("evt", function () {
+    gotThis = this;
+  });
+  em.emit("evt", { target: marker });
+  check("Emitter：派发绑定 this=event.target（无 target 时 undefined）", gotThis === marker);
+  let gotThis2 = "unset";
+  em.on("evt2", function () {
+    gotThis2 = this;
+  });
+  em.emit("evt2", { n: 1 });
+  check("Emitter：payload 无 target → this=undefined", gotThis2 === undefined);
 }
 
 // createImageBitmap：解析出原生平台 image（纹理源身份）
