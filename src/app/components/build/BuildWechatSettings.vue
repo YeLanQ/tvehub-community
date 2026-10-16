@@ -22,10 +22,11 @@ const debug = defineModel<boolean>("debug", { required: true });
       AppID
       <span class="bp-label-hint">可选，留空走继承链</span>
     </label>
+    <!-- 示例用非 hex 字符：wx+16 位 hex 会被 GitHub 密钥扫描误判为微信 AppID -->
     <input
       id="bp-wechat-appid"
       v-model="wechatAppId"
-      placeholder="wx1234567890abcdef"
+      placeholder="wxxxxxxxxxxxxxxxx"
       spellcheck="false"
     />
     <p class="bp-note">
