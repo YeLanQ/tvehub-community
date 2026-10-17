@@ -52,6 +52,13 @@ describe("网格与模型", () => {
     expect(n.geometry).toBe("box");
   });
 
+  it("空/空白名称视同未提供 → 用默认占位名（devtools/UI 传 \"\" 的常见写法）", () => {
+    expect(factory.createMesh("box", { name: "" }).name).toBe("Box");
+    expect(factory.createMesh("box", { name: "   " }).name).toBe("Box");
+    expect(factory.createMesh("box", { name: "  My Box  " }).name).toBe("My Box");
+    expect(factory.createLight("point", { name: "" }).name.length).toBeGreaterThan(0);
+  });
+
   it("createModel：source=model、材质置空（内嵌）、名称取文件名 stem", () => {
     const m = factory.createModel("assets/models/Robot.fbx");
     expect(m.source).toBe("model");

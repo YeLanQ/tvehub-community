@@ -293,7 +293,12 @@ export function addUILayout(engine: EditorEngine, parentId?: string, name?: stri
 
 export function addEmptyGroup(engine: EditorEngine, parentId?: string, name?: string): Node {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.create("node", { parentId: parent?.id ?? null, name: name ?? "Group" });
+  // 空/空白名称视同未提供（devtools/UI 传 "" 的写法）：与其它节点一致用占位名，
+  // 否则 `??` 保留空串、decorate 跳过 → 落到 Node 构造默认 "Node"（不统一）
+  const node = engine.factory.create("node", {
+    parentId: parent?.id ?? null,
+    name: name?.trim() || "Group",
+  });
   engine.graph.add(node);
   engine.select(node.id);
   return node;

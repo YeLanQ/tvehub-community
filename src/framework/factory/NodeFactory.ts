@@ -84,6 +84,13 @@ const LIGHT_DEFAULT_NAME: Record<LightKind, string> = {
 export class NodeFactory {
   constructor(private registry: PrototypeRegistry) {}
 
+  /** 空/空白名称视同未提供：devtools/UI 常以 "" 表示「用默认名」，`??` 只兜
+   * null/undefined，空串会原样写入 → 新建节点名称为空（占位名丢失） */
+  private static nameOf(name: string | undefined, fallback: string): string {
+    const trimmed = name?.trim();
+    return trimmed ? trimmed : fallback;
+  }
+
   create<K extends EditorNodeType>(type: K, opts: CreateOptions = {}): NodeOf<K> {
     const node = this.registry.create(type) as NodeOf<K>;
     this.decorate(node, opts);
@@ -102,7 +109,7 @@ export class NodeFactory {
     node.source = "primitive";
     node.geometry = def.key;
     if (def.defaultSize) node.size = { ...def.defaultSize };
-    node.name = opts.name ?? def.label;
+    node.name = NodeFactory.nameOf(opts.name, def.label);
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -116,7 +123,7 @@ export class NodeFactory {
     node.source = "model";
     node.model = rel;
     node.material = ""; // 模型材质内嵌，不走材质资产
-    node.name = opts.name ?? modelFileStem(rel);
+    node.name = NodeFactory.nameOf(opts.name, modelFileStem(rel));
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -129,7 +136,7 @@ export class NodeFactory {
     const node = this.registry.create("meshNode") as MeshNode;
     node.source = "data";
     node.dataMesh = null;
-    node.name = opts.name ?? "数据网格";
+    node.name = NodeFactory.nameOf(opts.name, "数据网格");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -137,7 +144,7 @@ export class NodeFactory {
   /** 按灯光类型创建对应节点原型（点光/平行光/环境光/聚光灯） */
   createLight(kind: LightKind, opts: CreateOptions = {}): LightNode {
     const node = this.registry.create(LIGHT_TYPE_KEY[kind]) as LightNode;
-    node.name = opts.name ?? LIGHT_DEFAULT_NAME[kind];
+    node.name = NodeFactory.nameOf(opts.name, LIGHT_DEFAULT_NAME[kind]);
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -145,7 +152,7 @@ export class NodeFactory {
   createCamera(opts: CreateOptions & { isEditorCamera?: boolean } = {}): CameraNode {
     const node = this.registry.create("cameraNode") as CameraNode;
     node.isEditorCamera = opts.isEditorCamera ?? false;
-    node.name = opts.name ?? (node.isEditorCamera ? "EditorCamera" : "Camera");
+    node.name = NodeFactory.nameOf(opts.name, (node.isEditorCamera ? "EditorCamera" : "Camera"));
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -156,7 +163,7 @@ export class NodeFactory {
     node.skyKind = kind;
     // 类型固定 → 材质引用固定到对应的内置天空盒材质
     node.material = skyMaterialForKind(kind);
-    node.name = opts.name ?? defaultSkyboxName(kind);
+    node.name = NodeFactory.nameOf(opts.name, defaultSkyboxName(kind));
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -164,7 +171,7 @@ export class NodeFactory {
   /** 创建音源节点（音频资产引用与播放参数后续经检查器绑定） */
   createAudio(opts: CreateOptions = {}): AudioNode {
     const node = this.registry.create("audioNode") as AudioNode;
-    node.name = opts.name ?? "Audio Source";
+    node.name = NodeFactory.nameOf(opts.name, "Audio Source");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -172,7 +179,7 @@ export class NodeFactory {
   /** 创建粒子系统节点（默认为循环的叠加混合圆锥发射器；参数经检查器调整） */
   createParticleSystem(opts: CreateOptions = {}): ParticleSystemNode {
     const node = this.registry.create("particleSystemNode") as ParticleSystemNode;
-    node.name = opts.name ?? "Particle System";
+    node.name = NodeFactory.nameOf(opts.name, "Particle System");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -180,7 +187,7 @@ export class NodeFactory {
   /** 创建地形节点（默认程序化山地设置；参数经检查器调整，改参数即重建几何） */
   createTerrain(opts: CreateOptions = {}): TerrainNode {
     const node = this.registry.create("terrainNode") as TerrainNode;
-    node.name = opts.name ?? "Terrain";
+    node.name = NodeFactory.nameOf(opts.name, "Terrain");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -188,7 +195,7 @@ export class NodeFactory {
   /** 创建导航区域节点（场景级烘焙载体；覆盖范围自动取所采样地形） */
   createNavArea(opts: CreateOptions = {}): NavAreaNode {
     const node = this.registry.create("navAreaNode") as NavAreaNode;
-    node.name = opts.name ?? "Nav Area";
+    node.name = NodeFactory.nameOf(opts.name, "Nav Area");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -196,7 +203,7 @@ export class NodeFactory {
   /** 创建导航代理节点（寻路移动体；路径经导航系统按需计算） */
   createNavAgent(opts: CreateOptions = {}): NavAgentNode {
     const node = this.registry.create("navAgentNode") as NavAgentNode;
-    node.name = opts.name ?? "Nav Agent";
+    node.name = NodeFactory.nameOf(opts.name, "Nav Agent");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -204,7 +211,7 @@ export class NodeFactory {
   /** 创建状态机运行器节点（.fsm 资产的场景载体；资产经检查器绑定） */
   createFsmRunner(opts: CreateOptions = {}): FsmRunnerNode {
     const node = this.registry.create("fsmRunnerNode") as FsmRunnerNode;
-    node.name = opts.name ?? "FSM Runner";
+    node.name = NodeFactory.nameOf(opts.name, "FSM Runner");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -212,7 +219,7 @@ export class NodeFactory {
   /** 创建行为树运行器节点（.bt 资产的场景载体；资产经检查器绑定） */
   createBtRunner(opts: CreateOptions = {}): BtRunnerNode {
     const node = this.registry.create("btRunnerNode") as BtRunnerNode;
-    node.name = opts.name ?? "BT Runner";
+    node.name = NodeFactory.nameOf(opts.name, "BT Runner");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -221,7 +228,7 @@ export class NodeFactory {
   createFog(kind: FogKind, opts: CreateOptions = {}): FogNode {
     const node = this.registry.create("fogNode") as FogNode;
     node.fogKind = kind;
-    node.name = opts.name ?? (kind === "exp2" ? "Exponential Fog" : kind === "height" ? "Height Fog" : "Linear Fog");
+    node.name = NodeFactory.nameOf(opts.name, (kind === "exp2" ? "Exponential Fog" : kind === "height" ? "Height Fog" : "Linear Fog"));
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -233,7 +240,7 @@ export class NodeFactory {
    */
   createUICanvas(opts: CreateOptions = {}, defaults?: UICanvasDefaults): UICanvasNode {
     const node = this.registry.create("uiCanvasNode") as UICanvasNode;
-    node.name = opts.name ?? "UI Canvas";
+    node.name = NodeFactory.nameOf(opts.name, "UI Canvas");
     if (defaults) {
       node.designWidth = defaults.designWidth;
       node.designHeight = defaults.designHeight;
@@ -246,7 +253,7 @@ export class NodeFactory {
   /** 创建 UI 图片 Widget（默认纯色矩形；图片资产经检查器绑定） */
   createUIImage(opts: CreateOptions = {}): UIImageNode {
     const node = this.registry.create("uiImageNode") as UIImageNode;
-    node.name = opts.name ?? "Image";
+    node.name = NodeFactory.nameOf(opts.name, "Image");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -254,7 +261,7 @@ export class NodeFactory {
   /** 创建 UI 文本 Widget（默认内容 "Text"；样式经检查器调整） */
   createUIText(opts: CreateOptions = {}): UITextNode {
     const node = this.registry.create("uiTextNode") as UITextNode;
-    node.name = opts.name ?? "Text";
+    node.name = NodeFactory.nameOf(opts.name, "Text");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -262,7 +269,7 @@ export class NodeFactory {
   /** 创建 UI 按钮 Widget（背景 + 标签；运行时可点击，脚本经 engine.ui 订阅） */
   createUIButton(opts: CreateOptions = {}): UIButtonNode {
     const node = this.registry.create("uiButtonNode") as UIButtonNode;
-    node.name = opts.name ?? "Button";
+    node.name = NodeFactory.nameOf(opts.name, "Button");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
@@ -270,7 +277,7 @@ export class NodeFactory {
   /** 创建 UI 布局容器（横向/竖向/网格排列直接子 UI 节点；自身经锚点定位） */
   createUILayout(opts: CreateOptions = {}): UILayoutNode {
     const node = this.registry.create("uiLayoutNode") as UILayoutNode;
-    node.name = opts.name ?? "Layout";
+    node.name = NodeFactory.nameOf(opts.name, "Layout");
     this.decorate(node, { ...opts, name: undefined });
     return node;
   }
