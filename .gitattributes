@@ -2,5 +2,6 @@
 src/runtime/extra/** -text
 # 生成文件：生成器写 LF，避免 autocrlf 造成的行尾幻影改动（常态性 M 零实体 diff）
 src/generated/** text eol=lf
+public/licenses/** text eol=lf
 # 文档一律 LF：autocrlf checkout 出 CRLF 会让 skills:check 的 frontmatter 正则失配（已两次复发）
 *.md text eol=lf
