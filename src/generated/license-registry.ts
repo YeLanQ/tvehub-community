@@ -79,10 +79,10 @@ export const DEPENDENCY_LICENSES: DependencyLicense[] = [
   {
     "id": "tauri-apps-api",
     "name": "@tauri-apps/api",
-    "version": "2.11.1",
+    "version": "2.12.4",
     "license": "Apache-2.0 OR MIT",
     "homepage": "https://github.com/tauri-apps/tauri#readme",
-    "source": "@tauri-apps/api@2.11.1",
+    "source": "@tauri-apps/api@2.12.4",
     "files": [
       {
         "name": "LICENSE_APACHE-2.0",
@@ -91,17 +91,29 @@ export const DEPENDENCY_LICENSES: DependencyLicense[] = [
       {
         "name": "LICENSE_MIT",
         "path": "licenses/tauri-apps-api/LICENSE_MIT"
+      },
+      {
+        "name": "LICENSE-APACHE-2.0",
+        "path": "licenses/tauri-apps-api/LICENSE-APACHE-2.0"
+      },
+      {
+        "name": "LICENSE-MIT",
+        "path": "licenses/tauri-apps-api/LICENSE-MIT"
+      },
+      {
+        "name": "LICENSE.spdx",
+        "path": "licenses/tauri-apps-api/LICENSE.spdx"
       }
     ]
   },
   {
     "id": "tauri-apps-plugin-opener",
     "name": "@tauri-apps/plugin-opener",
-    "version": "2.5.5",
+    "version": "2.7.2",
     "license": "MIT OR Apache-2.0",
     "homepage": "https://github.com/tauri-apps/plugins-workspace",
     "note": "上游仅随附 SPDX 文档（LICENSE.spdx），未附许可证正文",
-    "source": "@tauri-apps/plugin-opener@2.5.5",
+    "source": "@tauri-apps/plugin-opener@2.7.2",
     "files": [
       {
         "name": "LICENSE.spdx",
