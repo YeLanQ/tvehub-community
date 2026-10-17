@@ -99,7 +99,7 @@ v1.0.0 把作品送出编辑器：微信小游戏一键直出，真机实测跑�
 
 环境要求：Node.js 18+、pnpm、Rust 工具链（构建桌面端安装包需要）。
 
-仓库含两个 submodule（`public/docs/` 内置文档、`public/repos/` 创意工坊资源仓库），克隆时需一并拉取：
+仓库含一个 submodule（`public/repos/` 创意工坊资源仓库），克隆时需一并拉取（内置文档已随库内嵌，无需额外拉取）：
 
 ```bash
 git clone --recurse-submodules https://github.com/YeLanQ/tvehub-community.git   # 首次克隆
@@ -146,7 +146,7 @@ src/
   components/         # 通用业务组件
   ui-kit/             # 编辑器 UI 组件库
   lib/                # 数据层门面（唯一允许直接调用桌面端 IPC 的位置）
-public/docs/          # 内置文档 submodule（TvEHub-Docs，MIT）：编辑器手册 + SDK 教程与 API 参考
+public/docs/          # 内置文档（随库内嵌、随版本同步）：编辑器手册 + SDK 教程与 API 参考
 public/repos/         # 创意工坊资源仓库 submodule（TvEHub-Repos，MIT）：一个子目录一个分类
 public/engine/        # 网页预览运行时 = 纯构建产物目录（不入库），由 runtime/scripts/engine.mjs 全量再生
 src-tauri/            # 桌面端后端（Rust：项目/资产管理、预览构建、窗口会话、助手大脑、TCP 指令服务）
@@ -197,4 +197,4 @@ pnpm gen:api-docs           # tve.d.ts 变更后再生 public/docs/sdk/api.md（
 
 本项目基于 [Apache License 2.0](LICENSE) 开源发布。
 
-两个 submodule 是各自独立的开源仓库，均基于 **MIT** 发布：`public/docs/`（内置文档，[TvEHub-Docs](https://gitcode.com/YeLanQ/TvEHub-Docs)）与 `public/repos/`（创意工坊资源仓库，[TvEHub-Repos](https://gitcode.com/YeLanQ/TvEHub-Repos)），许可文件见各自仓库根目录。
+创意工坊资源仓库 `public/repos/` 是 submodule（独立 MIT 开源仓库 [TvEHub-Repos](https://gitcode.com/YeLanQ/TvEHub-Repos)，许可文件见其仓库根目录）；内置文档 `public/docs/` 已随本库内嵌发布，同样基于 **MIT**（见 [public/docs/LICENSE](public/docs/LICENSE)）。
