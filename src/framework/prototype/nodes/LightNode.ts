@@ -4,6 +4,16 @@ import { ALL_LAYERS_MASK, parseCullingMask } from "../../layers";
 
 export type LightKind = "point" | "directional" | "ambient" | "spot";
 
+/** 全部灯光类型（创建/属性命令校验共用；单源） */
+export const LIGHT_KINDS: LightKind[] = ["point", "directional", "ambient", "spot"];
+
+/** 入参别名归一：大小写不敏感，兼容 `pointLight` 一类写法。 */
+export function normalizeLightKind(v: unknown): LightKind | undefined {
+  if (typeof v !== "string") return undefined;
+  const k = v.trim().toLowerCase().replace(/(light|node)$/, "");
+  return (LIGHT_KINDS as string[]).includes(k) ? (k as LightKind) : undefined;
+}
+
 export interface LightNodeInit extends NodeInit {
   intensity?: number;
   lightColor?: number;

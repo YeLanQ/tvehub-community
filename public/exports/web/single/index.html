@@ -47,6 +47,21 @@
   <body>
     <div id="app"></div>
     <div id="error"></div>
+    <!-- 启动看门狗：运行时代码未执行/首帧未渲染时显示 #error（黑屏对用户不可诊断）。
+         player.mjs 首帧渲染后置 window.__tvePreviewBooted = true；fail() 会直接显示错误层。 -->
+    <script>
+      setTimeout(function () {
+        if (window.__tvePreviewBooted) return;
+        var el = document.getElementById("error");
+        if (!el || el.classList.contains("visible")) return;
+        el.textContent =
+          "预览运行失败
+
+启动超时（15 秒）：运行时代码未执行或首帧未渲染。
+请打开浏览器开发者工具查看控制台（常见原因：引擎产物缺失、WebGL 不可用、资产 404）。";
+        el.classList.add("visible");
+      }, 15000);
+    </script>
     <!-- 单页构建：场景/资产/运行时代码（player + libs）由构建流程全部内联注入下方
          占位处（数据脚本 + Blob/importmap 引导脚本），产物只有一个 HTML 文件 -->
     {{BUILD_DATA}}

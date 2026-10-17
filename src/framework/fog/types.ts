@@ -15,6 +15,17 @@ export type FogKind = "linear" | "exp2" | "height";
 /** 全部雾类型（创建菜单/命令层校验共用） */
 export const FOG_KINDS: FogKind[] = ["linear", "exp2", "height"];
 
+/** 入参/场景文件的别名归一：`exponential` 是 `exp2` 的文档/外部写法。
+ * 未知值返回 undefined，由调用方决定报错还是保留旧值。 */
+export function normalizeFogKind(v: unknown): FogKind | undefined {
+  if (typeof v !== "string") return undefined;
+  const k = v.trim().toLowerCase();
+  if (k === "exp2" || k === "exponential") return "exp2";
+  if (k === "linear") return "linear";
+  if (k === "height") return "height";
+  return undefined;
+}
+
 /**
  * 雾设置（FogNode.fog 的形状；全部字段随场景序列化，按 fogKind 取用）。
  * height 类型复用 color/density 作雾色与基础浓度（exp2 式距离衰减），

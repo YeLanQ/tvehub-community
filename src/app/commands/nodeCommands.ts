@@ -16,9 +16,15 @@ import type { MoveTarget, TransformSnapshot } from "../../framework/scene/SceneC
 import type { JsonRecord, Vec3 } from "../../framework/prototype/types";
 
 import { GEOMETRY_KINDS } from "../../framework/mesh/geometry";
-import type { LightKind } from "../../framework/prototype/nodes/LightNode";
-import type { SkyboxKind } from "../../framework/prototype/nodes/SkyboxNode";
-import { FOG_KINDS } from "../../framework/fog/types";
+import {
+  LIGHT_KINDS,
+  normalizeLightKind,
+} from "../../framework/prototype/nodes/LightNode";
+import {
+  SKYBOX_KINDS,
+  normalizeSkyboxKind,
+} from "../../framework/prototype/nodes/SkyboxNode";
+import { FOG_KINDS, normalizeFogKind } from "../../framework/fog/types";
 import { isTerrainAssetRel, parseTerrainSettings } from "../../framework/terrain";
 import {
   canAddComponent,
@@ -28,9 +34,6 @@ import {
   createScriptComponentRef,
 } from "../lib/component-registry";
 import type { NodeComponentRef } from "../../framework/prototype/components";
-
-const LIGHT_KINDS: LightKind[] = ["point", "directional", "ambient", "spot"];
-const SKYBOX_KINDS: SkyboxKind[] = ["cube", "procedural"];
 
 function editor() {
   return getEditorStore();
@@ -49,9 +52,11 @@ function strictSubtype<T extends string>(
   list: readonly T[],
   v: unknown,
   option: string,
+  normalize?: (v: unknown) => T | undefined,
 ): T | undefined {
   if (v === undefined || v === null || v === "") return undefined;
-  if (typeof v === "string" && list.includes(v as T)) return v as T;
+  const candidate = typeof v === "string" ? (normalize ? normalize(v) : (v as T)) : undefined;
+  if (candidate && list.includes(candidate)) return candidate;
   throw new Error(`${option} 非法: ${JSON.stringify(v)}（可选: ${list.join("/")}）`);
 }
 
@@ -263,7 +268,7 @@ registerCommand({
       case "light":
       case "lightnode":
         node = engine().addLight(
-          strictSubtype(LIGHT_KINDS, subtype ?? args?.lightKind, "lightKind") ?? "point",
+          strictSubtype(LIGHT_KINDS, subtype ?? args?.lightKind, "lightKind", normalizeLightKind) ?? "point",
           parentId,
           name,
         );
@@ -275,7 +280,7 @@ registerCommand({
       case "skybox":
       case "skyboxnode":
         node = engine().addSkybox(
-          strictSubtype(SKYBOX_KINDS, subtype ?? args?.skyKind, "skyKind") ?? "procedural",
+          strictSubtype(SKYBOX_KINDS, subtype ?? args?.skyKind, "skyKind", normalizeSkyboxKind) ?? "procedural",
           parentId,
           name,
         );
@@ -283,7 +288,7 @@ registerCommand({
       case "fog":
       case "fognode":
         node = engine().addFog(
-          strictSubtype(FOG_KINDS, subtype ?? args?.fogKind, "fogKind") ?? "linear",
+          strictSubtype(FOG_KINDS, subtype ?? args?.fogKind, "fogKind", normalizeFogKind) ?? "linear",
           parentId,
           name,
         );

@@ -10,6 +10,8 @@ import type { JsonRecord, JsonValue } from "../../framework/prototype/types";
 import type { TransformSnapshot } from "../../framework/scene/SceneClient";
 import type { GeometryKind } from "../../framework/mesh/geometry";
 import { GEOMETRY_KINDS } from "../../framework/mesh/geometry";
+import { SKYBOX_KINDS, normalizeSkyboxKind } from "../../framework/prototype/nodes/SkyboxNode";
+import { FOG_KINDS, normalizeFogKind } from "../../framework/fog/types";
 
 /** 解析成功的分类补丁 */
 export interface NodeSetPatch {
@@ -210,6 +212,26 @@ export function coercePropsToNode(
         };
       }
       out[key] = geom;
+      continue;
+    }
+    if (key === "skyKind") {
+      const kind = normalizeSkyboxKind(raw);
+      if (!kind) {
+        return {
+          error: `skyKind 非法: ${JSON.stringify(raw)}（可选: ${SKYBOX_KINDS.join("/")}）`,
+        };
+      }
+      out[key] = kind;
+      continue;
+    }
+    if (key === "fogKind") {
+      const kind = normalizeFogKind(raw);
+      if (!kind) {
+        return {
+          error: `fogKind 非法: ${JSON.stringify(raw)}（可选: ${FOG_KINDS.join("/")}）`,
+        };
+      }
+      out[key] = kind;
       continue;
     }
     if (key === "material") {

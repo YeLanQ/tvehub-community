@@ -4,6 +4,7 @@ import { cloneRecord } from "../types";
 import {
   DEFAULT_FOG_SETTINGS,
   cloneFogSettings,
+  normalizeFogKind,
   parseFogSettings,
   type FogKind,
   type FogSettings,
@@ -68,8 +69,8 @@ export class FogNode extends Node implements IFogNode {
   }
 
   protected override readOwnData(source: Record<string, unknown>): void {
-    const kind = source.fogKind as FogKind | undefined;
-    if (kind === "linear" || kind === "exp2" || kind === "height") this.fogKind = kind;
+    const kind = normalizeFogKind(source.fogKind);
+    if (kind) this.fogKind = kind;
     this.fog = parseFogSettings(source.fog);
   }
 }

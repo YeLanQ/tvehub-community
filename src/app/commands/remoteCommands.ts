@@ -24,6 +24,7 @@ import {
 import { registerCommand } from "./registry";
 import { asBool, asRecord, asStringList } from "./args";
 import { resolveAssetTarget } from "./assetCreateArgs";
+import { SKYBOX_KINDS, normalizeSkyboxKind } from "../../framework/prototype/nodes/SkyboxNode";
 
 /** 当前项目根；未打开项目时抛错（各域命令共用） */
 function requireRoot(): string {
@@ -562,7 +563,7 @@ registerCommand({
   label: "新建资源",
   group: "资源",
   expose: true,
-  description: "新建资源文件或目录（type: scene/script/material/shader/texcube/skybox/prefab/anim/terrain/folder；dir 目标目录；name 名称；shader 可带 shaderKind: physical/unlit/toon/skyprocedural/skycube；skybox 可带 skyKind: procedural/cube）",
+  description: "新建资源文件或目录（type: scene/script/material/shader/texcube/skybox/prefab/anim/terrain/folder；dir 目标目录；name 名称；shader 可带 shaderKind: physical/unlit/toon/skyprocedural/skycube；skybox 可带 skyKind: procedural/cube（cubemap 别名））",
   run: async (_ctx, args: Record<string, unknown>) => {
     const root = requireRoot();
     const type = String(args?.type ?? "").toLowerCase();
@@ -626,8 +627,13 @@ registerCommand({
         return { created: rel, type };
       }
       case "skybox": {
-        const raw = String(args?.skyKind ?? "procedural").toLowerCase();
-        const kind = raw === "cube" ? "cube" : "procedural";
+        const raw = args?.skyKind ?? "procedural";
+        const kind = normalizeSkyboxKind(raw);
+        if (!kind) {
+          throw new Error(
+            `skyKind 非法: ${JSON.stringify(raw)}（可选: ${SKYBOX_KINDS.join("/")}；cubemap 是 cube 的别名）`,
+          );
+        }
         const name = stem ?? "";
         const rel = await store.createSkyboxAsset(
           root,

@@ -1111,6 +1111,8 @@ async function main() {
     // RPI 主渲染（Culling Mask 分层多 pass 在管线内拆分：相机掩码全开/单层
     // 占用 → 单 pass 零开销；多层占用 → 按层拆，灯光只照亮各自掩码内的层）
     pipeline.renderView({ scene, camera: cam, clear: frameClear });
+    // 首帧已渲染：解除入口页的启动看门狗（模板里的 10s 超时提示）
+    if (!window.__tvePreviewBooted) window.__tvePreviewBooted = true;
     if (uiHidden > 0) uiApi.endRender(cam);
     // 调试统计：FPS（EMA 平滑）+ 帧距样本 + 场景网格/顶点遍历
     if (debugVisible) {
@@ -1146,5 +1148,10 @@ async function main() {
 
 window.addEventListener("error", (e) => {
   fail(e.message || "未知错误");
+});
+// 未处理的 Promise 拒绝同样可见：否则异步初始化失败只留黑屏 + 控制台
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  fail((r && (r.message || r.stack)) || r || "未处理的异步错误");
 });
 main().catch(fail);

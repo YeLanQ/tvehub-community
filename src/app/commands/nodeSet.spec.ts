@@ -10,6 +10,8 @@ import {
   type NodeSetPatch,
 } from "./nodeSet";
 import { PointLightNode } from "../../framework/prototype/nodes/PointLightNode";
+import { SkyboxNode } from "../../framework/prototype/nodes/SkyboxNode";
+import { FogNode } from "../../framework/prototype/nodes/FogNode";
 import { MeshNode } from "../../framework/prototype/nodes/MeshNode";
 import { Node } from "../../framework/prototype/Node";
 
@@ -216,6 +218,33 @@ describe("coercePropsToNode（属性命令通道值域收敛）", () => {
     const ok = coercePropsToNode(mesh, { geometry: "Sphere" });
     if ("error" in ok) throw new Error(`应收敛成功: ${ok.error}`);
     expect(ok.props).toEqual({ geometry: "sphere" });
+  });
+
+  it("异常：skyKind / fogKind 与 geometry 同源校验；cubemap / exponential 别名归一", () => {
+    const sky = new SkyboxNode({ name: "Sky" });
+    const cube = coercePropsToNode(sky, { skyKind: "cubemap" });
+    if ("error" in cube) throw new Error(`应收敛成功: ${cube.error}`);
+    expect(cube.props).toEqual({ skyKind: "cube" });
+    const badSky = coerceError(coercePropsToNode(sky, { skyKind: "box" }));
+    expect(badSky).toContain("skyKind 非法");
+    expect(badSky).toContain("procedural/cube");
+
+    const fog = new FogNode({ name: "Fog" });
+    const exp = coercePropsToNode(fog, { fogKind: "exponential" });
+    if ("error" in exp) throw new Error(`应收敛成功: ${exp.error}`);
+    expect(exp.props).toEqual({ fogKind: "exp2" });
+    const badFog = coerceError(coercePropsToNode(fog, { fogKind: "exponential2" }));
+    expect(badFog).toContain("fogKind 非法");
+    expect(badFog).toContain("linear/exp2/height");
+  });
+
+  it("读取侧别名兼容：旧场景文件的 cubemap / exponential 归一为规范值", () => {
+    const sky = new SkyboxNode();
+    sky.applyJSON({ ...(sky.toJSON() as JsonRecord), skyKind: "cubemap" } as JsonRecord);
+    expect(sky.skyKind).toBe("cube");
+    const fog = new FogNode();
+    fog.applyJSON({ ...(fog.toJSON() as JsonRecord), fogKind: "exponential" } as JsonRecord);
+    expect(fog.fogKind).toBe("exp2");
   });
 
   it("异常：material 只接受 .mat 路径；未知属性回传可写属性清单", () => {

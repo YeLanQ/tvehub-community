@@ -12,6 +12,9 @@ script 视图连带保存脏脚本）、`editor.gizmoMode`（args `mode`: transl
 camera/skybox/fog/audio/particle/nav/logic/terrain/ui/script/model + subtype/
 geometry/path/scriptRel/name，model/mesh 收 `position` 出生落位（缺省一律落世界原点，灯光除外——功能性斜上方对准场景中心）；mesh 的
 subtype=`data` 建数据化网格节点（source=data，载荷经检查器「Data Mesh」导入）；
+light 的 subtype 取 point/directional/ambient/spot；skybox 的 subtype 取
+procedural/cube（`cubemap` 为 cube 别名）；fog 的 subtype 取 linear/exp2/height
+（`exponential` 为 exp2 别名）——拼错报错并列出可选值（reader 侧对旧文件做同样的别名归一）；
 **父级语义**：
 `parentId/parent` 显式指定永远精确生效；未指定时挂根——仅当选中的是容器型
 节点（空组/uiCanvasNode/uiLayoutNode，判定 isImplicitContainer）才挂到其下，
@@ -22,7 +25,8 @@ newIndex}，成环守卫）、`node.patch`（`id,before,after` 整节点补丁�
 `node.setTransform`（`id,snapshot`）、`node.set`（`{id,prop,value}` 单属性或
 `{id,...字段}` 字段包：name/visible/active/tag/transform/position/rotation/scale
 任意混写，transform 与分量逐轴部分合并；解析/合并纯函数见 nodeSet.ts；禁改
-id/父子/children/type）、
+id/父子/children/type；`geometry`/`skyKind`/`fogKind` 按创建同源枚举校验并别名归一，
+`lightKind` 为派生只读字段不可设）、
 `node.alignCameraToViewport`（相机对齐视口）、`node.select`（`id` 空=取消）、
 `node.renameSelected`（弹框，F2 共用）。
 

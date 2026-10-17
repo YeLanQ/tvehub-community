@@ -5,6 +5,19 @@ import { cloneRecord } from "../types";
 /** 天空盒类型：程序化天空 / 立方体天空盒 */
 export type SkyboxKind = "procedural" | "cube";
 
+/** 全部天空盒类型（创建/属性命令校验共用；单源） */
+export const SKYBOX_KINDS: SkyboxKind[] = ["procedural", "cube"];
+
+/** 入参/场景文件的别名归一：`cubemap` 是 `cube` 的历史写法（外部客户端/旧文件都可能写）。
+ * 未知值返回 undefined，由调用方决定报错还是保留旧值。 */
+export function normalizeSkyboxKind(v: unknown): SkyboxKind | undefined {
+  if (typeof v !== "string") return undefined;
+  const k = v.trim().toLowerCase();
+  if (k === "cube" || k === "cubemap") return "cube";
+  if (k === "procedural") return "procedural";
+  return undefined;
+}
+
 /** 程序化天空的太阳盘模式 */
 export type SkySunDisk = "high" | "simple" | "none";
 
@@ -169,8 +182,8 @@ export class SkyboxNode extends Node implements ISkyboxNode {
   }
 
   protected override readOwnData(source: Record<string, unknown>): void {
-    const kind = source.skyKind as SkyboxKind | undefined;
-    if (kind === "procedural" || kind === "cube") this.skyKind = kind;
+    const kind = normalizeSkyboxKind(source.skyKind);
+    if (kind) this.skyKind = kind;
     // 兼容旧场景：缺 material 时按当前类型回退对应的内置天空盒材质
     this.material =
       (source.material as string) ?? skyMaterialForKind(this.skyKind);

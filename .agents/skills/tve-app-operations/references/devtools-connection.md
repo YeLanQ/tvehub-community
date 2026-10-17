@@ -58,6 +58,11 @@
 `MATERIAL_NOT_APPLIED`：节点已创建但后端回读的材质引用与请求不一致（写链落账后核验），
 不会在成功响应里谎报 `applied`。
 
+`node.add` / `node.set` 的枚举与校验（拼错报错并列出可选项，reader 对旧文件做同样的别名归一）：
+`geometry`=box/sphere/plane/quad/cylinder/cone/torus/capsule；`lightKind`=point/directional/
+ambient/spot；`skyKind`=procedural/cube（**cubemap 为 cube 别名**）；`fogKind`=linear/exp2/height
+（**exponential 为 exp2 别名**）。`lightKind` 是派生只读字段（灯光类型由节点类固定），`node.set` 会拒绝。
+
 写命令（`node.add/remove/rename/set`、`node.component.*`、`scene.settings.patch`、
 `scene.save`、`history.*`、`state.restore`、`scene.write`）**在写链落账后才回响应**：
 收到成功即可直接 `scene.tree` 读数，不必自己等待或重试。`scene.tree` / `state.snapshot`
