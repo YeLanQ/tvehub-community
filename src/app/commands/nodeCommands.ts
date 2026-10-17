@@ -210,27 +210,31 @@ registerCommand({
     if (kind !== "fog" && kind !== "fognode" && args?.fogKind !== undefined) {
       throw new Error("fogKind 仅 fog 节点支持");
     }
-    if (typeof args?.material === "string" && !/\.mat$/i.test(args.material.trim())) {
-      throw new Error(`material 需要 .mat 资产相对路径，收到: ${args.material}`);
+    // 材质引用有两种写法：顶层 material 与 props.material（模型/助手常用后者）。
+    // 两种都必须走同一套「先等注册表就绪，拿不到就报错」——只认顶层时 props
+    // 写法会绕过预取，节点虽写入 rel 但渲染落默认材质（applied 仍报成功）。
+    const propsArg = asRecord(args?.props);
+    // props 与顶层同时给出时 props 优先（与 applyAddExtras 的合并顺序一致）
+    const materialRaw = propsArg?.material ?? args?.material;
+    if (materialRaw !== undefined && typeof materialRaw !== "string") {
+      throw new Error(`material 需要 .mat 资产相对路径字符串，收到: ${JSON.stringify(materialRaw)}`);
+    }
+    const materialRel = typeof materialRaw === "string" ? materialRaw.trim() : "";
+    if (materialRel && !/\.mat$/i.test(materialRel)) {
+      throw new Error(`material 需要 .mat 资产相对路径，收到: ${materialRel}`);
     }
     // 名字在创建时传入（factory 的 name 选项）：避免「add + rename」两条历史
     const name = args?.name ? String(args.name).trim() : "";
     // 材质注册表是惰性加载的：先预取目标材质及其着色器再建节点/绑定，
     // 避免首次引用材质时先落默认外观（甚至被迟到的 add 回显覆盖）。
-    const materialRel = typeof args?.material === "string" ? args.material.trim() : "";
     if (materialRel) {
-      if (!engine().materials.isReady()) {
-        throw new Error(
-          "场景尚未就绪（SCENE_NOT_READY）：项目资产访问器未接入，材质无法解析；稍后重试",
-        );
-      }
+      // 显式等待注册表：preload 会等待在途加载（不是「缓存没有就跳过」）
+      await engine().materials.preload([materialRel]);
       if (!engine().materials.has(materialRel)) {
-        await engine().materials.preload([materialRel]);
-      }
-      if (!engine().materials.has(materialRel)) {
-        throw new Error(
-          `材质未就绪（MATERIAL_NOT_READY）: ${materialRel}（文件缺失或解析失败，先 asset.refresh 或检查路径）`,
-        );
+        const reason = engine().materials.isReady()
+          ? "文件缺失或解析失败，先 asset.refresh 或检查路径"
+          : "项目资产访问器未接入（项目/场景尚未装载完成）";
+        throw new Error(`材质未就绪，未创建节点（MATERIAL_NOT_READY）: ${materialRel}（${reason}）`);
       }
       const shaderRel = engine().materials.shaderFor(materialRel);
       if (shaderRel && !engine().shaders.has(shaderRel)) {
@@ -656,13 +660,29 @@ registerCommand({
     "设置节点属性（写入节点 JSON 并走撤销历史）。两种形式：{id, prop, value} 单属性，" +
     "或 {id, ...字段} 字段包（name/visible/active/tag/transform/position/rotation/scale 等" +
     "任意混写；transform 与分量支持部分字段逐轴合并，未给的分量保持原值）",
-  run: (_ctx, args: Record<string, unknown>) => {
+  run: async (_ctx, args: Record<string, unknown>) => {
     const id = String(args?.id ?? "");
     const node = graph().get(id);
     if (!node) throw new Error(`未找到节点: ${id}`);
     const parsed = parseNodeSetArgs(args);
     if ("error" in parsed) throw new Error(parsed.error);
     const { name, transform, props } = parsed.patch;
+    // 材质同样是惰性注册表：写入前等预取完成，拿不到就报错（不留「rel 已写、
+    // 渲染落默认」的半生效状态）
+    const materialRel = typeof props?.material === "string" ? props.material.trim() : "";
+    if (materialRel) {
+      await engine().materials.preload([materialRel]);
+      if (!engine().materials.has(materialRel)) {
+        const reason = engine().materials.isReady()
+          ? "文件缺失或解析失败，先 asset.refresh 或检查路径"
+          : "项目资产访问器未接入（项目/场景尚未装载完成）";
+        throw new Error(`材质未就绪，未修改节点（MATERIAL_NOT_READY）: ${materialRel}（${reason}）`);
+      }
+      const shaderRel = engine().materials.shaderFor(materialRel);
+      if (shaderRel && !engine().shaders.has(shaderRel)) {
+        await engine().shaders.preload([shaderRel]);
+      }
+    }
     const set: string[] = [];
     if (name !== undefined) {
       if (node.name !== name) graph().rename(id, name);

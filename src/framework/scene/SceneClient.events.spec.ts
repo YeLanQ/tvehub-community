@@ -3,6 +3,7 @@ import { SceneClient, type SceneChangedEvent, type SceneTransport } from "./Scen
 import { Node } from "../prototype/Node";
 import { createDefaultRegistry } from "../prototype/PrototypeRegistry";
 import { NodeFactory } from "../factory/NodeFactory";
+import type { JsonRecord } from "../prototype/types";
 
 // 图变更事件唯一发射源 = 后端 scene:changed 回显：
 // 本地提交只乐观改镜像、不发事件（有后端时），避免「乐观 emit + 回显 emit」
@@ -98,6 +99,32 @@ describe("图变更事件：只由后端回显发射", () => {
     expect(kinds).toEqual([]);
     echo(client, n, "properties", 2);
     expect(kinds).toEqual(["properties"]);
+  });
+
+  it("创建期补丁并入 add 载荷（一次落账，首个回显即最终态）", async () => {
+    const sent: JsonRecord[] = [];
+    const patches: string[] = [];
+    const base = makeTransport();
+    const client = makeClient(
+      {
+        ...base,
+        addNode: async (node) => {
+          sent.push(JSON.parse(JSON.stringify(node)) as JsonRecord);
+        },
+        patchNode: async (id) => {
+          patches.push(id);
+        },
+      },
+      [],
+    );
+    const n = new Node({ name: "E" });
+    client.add(n);
+    const before = n.toJSON() as JsonRecord;
+    client.commitPatch(n.id, before, { ...before, material: "assets/Materials/X.mat" } as never, "add extras");
+    await flush();
+    expect(sent.length).toBe(1);
+    expect((sent[0] as { material?: string }).material).toBe("assets/Materials/X.mat");
+    expect(patches).toEqual([]);
   });
 
   it("无后端（浏览器直开）：本地提交自行补发事件", () => {

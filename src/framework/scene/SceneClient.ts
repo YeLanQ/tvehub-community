@@ -337,6 +337,9 @@ export class SceneClient implements GraphLike {
    * 该节点的回显回填（本地乐观态 ≥ 回显态）。
    */
   private pendingEcho = new Map<string, number>();
+  /** 尚未出站的 add 载荷（nodeId → 可变 JSON）：同轮属性/变换补丁合并进来，
+   * 让首个回显快照即最终态（避免「建默认节点 → 再打补丁」被观察/渲染到中间态） */
+  private pendingAddPayload = new Map<string, JsonRecord>();
   /** 已应用的后端事件 revision（乱序回显防护：旧 revision 不得覆盖新快照） */
   private lastEventRevision = -1;
 
@@ -382,8 +385,15 @@ export class SceneClient implements GraphLike {
     if (!this.transport) this.emit({ kind: "add", nodeId: node.id });
     const json = node.toJSON() as JsonRecord;
     if (!this.transport) return;
+    // 出站前窗口：同轮同步调用（如 node.add 应用材质/尺寸补丁）会合并进
+    // add 载荷，回显快照即最终态——避免「先建默认节点、再打补丁」两条后端
+    // 命令之间被读到/渲染成默认材质。
+    this.pendingAddPayload.set(node.id, json);
     this.pendingMark([node.id]);
-    this.enqueueMutation(() => this.transport!.addNode(json, label))
+    this.enqueueMutation(() => {
+      this.pendingAddPayload.delete(node.id);
+      return this.transport!.addNode(json, label);
+    })
       .catch((e) => {
         logger.error(`[scene] 节点提交失败，已回滚 ${node.name}: ${String(e)}`);
         this.removeFromMap(node.id);
@@ -530,6 +540,12 @@ export class SceneClient implements GraphLike {
       if (!this.transport) this.emit({ kind: "transform", nodeId: id });
     }
     if (!this.transport) return;
+    const pendingAdd = this.pendingAddPayload.get(id);
+    if (pendingAdd) {
+      // add 尚未出站：变换并入载荷（随 Add 一次落账）
+      (pendingAdd as { transform?: unknown }).transform = after;
+      return;
+    }
     this.pendingMark([id]);
     this.enqueueMutation(() => this.transport!.setTransform(id, before, after))
       .catch((e) => {
@@ -554,6 +570,13 @@ export class SceneClient implements GraphLike {
       if (!this.transport) this.emit({ kind: "properties", nodeId: id });
     }
     if (!this.transport) return;
+    const pendingAdd = this.pendingAddPayload.get(id);
+    if (pendingAdd) {
+      // add 尚未出站：补丁并入载荷（一次撤销 = Add，首个回显即最终态；
+      // 材质/尺寸等创建期字段不再有「先默认、后补」的中间窗口）
+      Object.assign(pendingAdd, after);
+      return;
+    }
     this.pendingMark([id]);
     this.enqueueMutation(() => this.transport!.patchNode(id, before, after, label))
       .catch((e) => {
@@ -627,6 +650,7 @@ export class SceneClient implements GraphLike {
     this.rootId = null;
     // 新会话基线：revision 从 0 重新计数，清掉上一场景的事件版本水位
     this.lastEventRevision = -1;
+    this.pendingAddPayload.clear();
     if (rootJson && typeof rootJson === "object" && (rootJson as { type?: string }).type !== "empty") {
       const build = (json: JsonRecord, parentId: string | null): Node => {
         const node = this.factory.fromJSON(json);
@@ -650,6 +674,7 @@ export class SceneClient implements GraphLike {
   /** 平铺快照整树重建（replace 事件 / 兜底）：整树权威重建时清空在途状态 */
   rebuildFromSnapshots(list: JsonRecord[]): void {
     this.pendingEcho.clear();
+    this.pendingAddPayload.clear();
     this.nodes.clear();
     this.rootId = null;
     for (const json of list) {

@@ -84,6 +84,8 @@ describe("属性提交竞态（回显抑制 + 串行链）", () => {
     const { transport, calls, releaseAll } = makeTransport();
     const client = makeClient(transport);
     const n = addNode(client, "B", 0);
+    // 先放行 add 出站（同轮补丁会并入 add 载荷，测串行链需在 add 之后）
+    for (let i = 0; i < 5; i++) await Promise.resolve();
     client.commitPatch(n.id, {} as JsonRecord, n.toJSON() as JsonRecord, "p1");
     client.commitPatch(n.id, {} as JsonRecord, n.toJSON() as JsonRecord, "p2");
     // 串行链按微任务逐环推进（resolve→链推进→下一环出站）：多轮 flush + 放行
