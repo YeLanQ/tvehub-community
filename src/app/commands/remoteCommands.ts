@@ -422,36 +422,56 @@ registerCommand({
     const engine = getEditorStore().engine;
     const source = engine.renderer.domElement as HTMLCanvasElement;
     if (!source || !source.width) throw new Error("编辑器视口尚未就绪");
-    const canvas = document.createElement("canvas");
-    canvas.width = source.width;
-    canvas.height = source.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("创建离屏画布失败");
-    ctx.drawImage(source, 0, 0);
-    const dataUrl = canvas.toDataURL("image/png");
-    if (dataUrl.length < 100) throw new Error("截帧失败（画布为空，视口可能未在渲染）");
-    // 空白帧判定：缩到 32×32 抽样，三通道全同 → blank（纯色场景也会 blank，
-    // 但与「渲染失败」不同：调用方可据此判断是否需要继续尝试而非当成有效画面）
-    let blank = false;
-    try {
-      const probe = document.createElement("canvas");
-      probe.width = 32;
-      probe.height = 32;
-      const pctx = probe.getContext("2d");
-      if (pctx) {
-        pctx.drawImage(canvas, 0, 0, 32, 32);
-        const px = pctx.getImageData(0, 0, 32, 32).data;
-        let min = 255;
-        let max = 0;
-        for (let i = 0; i < px.length; i += 4) {
-          min = Math.min(min, px[i], px[i + 1], px[i + 2]);
-          max = Math.max(max, px[i], px[i + 1], px[i + 2]);
+    // ready=true 不代表首帧已绘制：先等两帧；仍为纯色时再重试一次（首图偶发空白）
+    // 后台窗口 rAF 可能被节流：500ms 超时兜底，绝不卡住截图命令
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        const raf = globalThis.requestAnimationFrame?.bind(globalThis);
+        if (!raf) return resolve();
+        raf(() => raf(() => resolve()));
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, 500)),
+    ]);
+    /** 抓一帧并判定是否纯色（blank 供调用方决定是否继续重试） */
+    const grab = (): { dataUrl: string; blank: boolean } => {
+      const canvas = document.createElement("canvas");
+      canvas.width = source.width;
+      canvas.height = source.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("创建离屏画布失败");
+      ctx.drawImage(source, 0, 0);
+      const dataUrl = canvas.toDataURL("image/png");
+      if (dataUrl.length < 100) throw new Error("截帧失败（画布为空，视口可能未在渲染）");
+      // 空白帧判定：缩到 32×32 抽样，三通道全同 → blank（纯色场景也会 blank，
+      // 但与「渲染失败」不同：调用方可据此判断是否需要继续尝试而非当成有效画面）
+      let blank = false;
+      try {
+        const probe = document.createElement("canvas");
+        probe.width = 32;
+        probe.height = 32;
+        const pctx = probe.getContext("2d");
+        if (pctx) {
+          pctx.drawImage(canvas, 0, 0, 32, 32);
+          const px = pctx.getImageData(0, 0, 32, 32).data;
+          let min = 255;
+          let max = 0;
+          for (let i = 0; i < px.length; i += 4) {
+            min = Math.min(min, px[i], px[i + 1], px[i + 2]);
+            max = Math.max(max, px[i], px[i + 1], px[i + 2]);
+          }
+          blank = max - min <= 1;
         }
-        blank = max - min <= 1;
+      } catch {
+        // 读像素失败（跨域污染等）：不阻断截图，blank 保持 false
       }
-    } catch {
-      // 读像素失败（跨域污染等）：不阻断截图，blank 保持 false
+      return { dataUrl, blank };
+    };
+    let shot = grab();
+    if (shot.blank) {
+      await new Promise((r) => setTimeout(r, 150));
+      shot = grab();
     }
+    const { dataUrl, blank } = shot;
     let saved: string | null = null;
     const root = getProjectStore().currentPath;
     if (root) {

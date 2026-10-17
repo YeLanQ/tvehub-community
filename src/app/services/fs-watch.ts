@@ -91,8 +91,16 @@ async function handleFsChanged(payload: FsChangedPayload): Promise<void> {
     return;
   }
 
-  // 自己的写盘（material.set / 历史 undo）不重复刷新、不重复广播事件
-  const paths = payload.paths.filter((rel) => !isSelfWrittenAsset(rel));
+  // 自己的写盘（material.set / 历史 undo）不重复刷新、不重复广播事件。
+  // 场景保存同样按自写处理：watcher 会把刚写下的 .scene 当外部修改推回来，
+  // 只在 asset.changed 里留下一条 skipped 噪音（save 路径已发 scene:self-save）。
+  const normRel = (rel: string): string => rel.replace(/\\/g, "/");
+  const savedSceneRel = normRel(projectStore.sceneRel || "");
+  const isSelfScene = (rel: string): boolean =>
+    Boolean(savedSceneRel) &&
+    normRel(rel) === savedSceneRel &&
+    Date.now() - lastSelfSceneWriteAt < SELF_WRITE_SUPPRESS_MS;
+  const paths = payload.paths.filter((rel) => !isSelfWrittenAsset(rel) && !isSelfScene(rel));
   if (!paths.length) return;
 
   const result = await refreshProjectAssets(paths);

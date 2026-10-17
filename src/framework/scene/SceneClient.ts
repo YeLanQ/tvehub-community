@@ -337,6 +337,8 @@ export class SceneClient implements GraphLike {
    * 该节点的回显回填（本地乐观态 ≥ 回显态）。
    */
   private pendingEcho = new Map<string, number>();
+  /** 已应用的后端事件 revision（乱序回显防护：旧 revision 不得覆盖新快照） */
+  private lastEventRevision = -1;
 
   /** 串行入站：所有后端变更命令按提交顺序执行；返回值透传给调用方 */
   private enqueueMutation<T>(run: () => Promise<T>): Promise<T> {
@@ -621,6 +623,8 @@ export class SceneClient implements GraphLike {
   replaceFromDocRoot(rootJson: JsonRecord | null | undefined): void {
     this.nodes.clear();
     this.rootId = null;
+    // 新会话基线：revision 从 0 重新计数，清掉上一场景的事件版本水位
+    this.lastEventRevision = -1;
     if (rootJson && typeof rootJson === "object" && (rootJson as { type?: string }).type !== "empty") {
       const build = (json: JsonRecord, parentId: string | null): Node => {
         const node = this.factory.fromJSON(json);
@@ -656,6 +660,11 @@ export class SceneClient implements GraphLike {
 
   /** 后端 scene:changed 事件回执：历史状态 + 快照幂等回填 + 子树清理 */
   applyEvent(evt: SceneChangedEvent): void {
+    // 事件乱序防护：add/patch 等命令各自广播，事件队列可能让较旧的 add 回显
+    // 晚于较新的 patch 回显到达——旧快照会把新属性（如材质引用）打回。
+    // revision 单调递增，旧 revision 一律丢弃；replace 视为新会话基线。
+    if (evt.kind !== "replace" && evt.revision < this.lastEventRevision) return;
+    this.lastEventRevision = evt.revision;
     this.history.update(evt.history);
     if (evt.kind === "replace") {
       this.rebuildFromSnapshots(evt.nodes);

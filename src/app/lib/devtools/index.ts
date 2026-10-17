@@ -28,8 +28,29 @@ export {
   enabledMcpTools,
 } from "./state";
 
-let unlistenCmd: UnlistenFn | null = null;
-let logWatchStarted = false;
+/**
+ * 运行时装配状态（挂在 globalThis）：监听器/日志推送器/串行链只能装一份。
+ * 模块级变量在 HMR 重载或重复模块实例下会各持一份 → 同一日志推两次、
+ * 同一节点事件推两次（真实现象：单次 node.add 收到两条逐字节相同的 log）。
+ */
+interface DevToolsRuntimeState {
+  unlistenCmd: UnlistenFn | null;
+  logWatchStarted: boolean;
+  eventBridgeStarted: boolean;
+  execChain: Promise<void>;
+  /** 已推送过的日志行对象（重复推送器共用同一数组，按引用去重） */
+  pushedLogLines: WeakSet<object>;
+}
+
+const RUNTIME_KEY = "__tveDevtoolsRuntime";
+const globalBag = globalThis as unknown as Record<string, DevToolsRuntimeState | undefined>;
+const rt: DevToolsRuntimeState = (globalBag[RUNTIME_KEY] ??= {
+  unlistenCmd: null,
+  logWatchStarted: false,
+  eventBridgeStarted: false,
+  execChain: Promise.resolve(),
+  pushedLogLines: new WeakSet(),
+});
 
 /** 命令执行器只允许挂在编辑器窗口（editor-*）：事件定向发送到活跃编辑器窗口，
  *  首页窗口不安装监听器（缺场景/引擎状态）。 */
@@ -112,10 +133,15 @@ export async function syncDevToolsStatus(): Promise<void> {
   devtools.info = info;
 }
 
+/** devtools:cmd 串行执行链（见 installCmdListener 内注释） */
 async function installCmdListener(): Promise<void> {
-  if (unlistenCmd) return;
-  unlistenCmd = await listen<CmdPayload>("devtools:cmd", (e) => {
-    void execute(e.payload);
+  if (rt.unlistenCmd) return;
+  rt.unlistenCmd = await listen<CmdPayload>("devtools:cmd", (e) => {
+    // 串行执行：到达序 = 执行序。此前完全并发——批量建节点后紧随 scene.save
+    // 时，save 的 quiesceWrites 会在尾部 add 尚未进入写链前落盘，产物静默
+    // 丢尾部命令（重存才对）。错误已在 execute 内经 devtoolsReply 回填，
+    // 链条不会 reject。
+    rt.execChain = rt.execChain.then(() => execute(e.payload)).catch(() => undefined);
   });
 }
 
@@ -128,13 +154,7 @@ export async function ensureCmdListener(): Promise<void> {
   await installEventBridge();
 }
 
-/**
- * 结构化变更事件桥：把后端 scene:changed（权威、带 revision/history）与引擎
- * 缓存变更转成 devtools 事件推给已订阅客户端（事件默认不推；push 内部按
- * devtools.enabled 短路）。只装一次；HMR 重复导入由模块级标记兜底。
- */
-let eventBridgeStarted = false;
-
+/** 后端 scene:changed kind → devtools 事件名 */
 function sceneEventName(kind: string): string {
   if (kind === "add") return "node.added";
   if (kind === "remove") return "node.removed";
@@ -159,9 +179,14 @@ function pushCoalesced(event: string, data: unknown, key: string): void {
   );
 }
 
+/**
+ * 结构化变更事件桥：把后端 scene:changed（权威、带 revision/history）与引擎
+ * 缓存变更转成 devtools 事件推给已订阅客户端（事件默认不推；push 内部按
+ * devtools.enabled 短路）。只装一次；HMR 重复导入由 globalThis 标记兜底。
+ */
 async function installEventBridge(): Promise<void> {
-  if (eventBridgeStarted) return;
-  eventBridgeStarted = true;
+  if (rt.eventBridgeStarted) return;
+  rt.eventBridgeStarted = true;
   const [{ sceneApi }, { getProjectStore }, { getEditorStore }] = await Promise.all([
     import("../../../lib/scene-api"),
     import("../../stores/project"),
@@ -230,15 +255,21 @@ async function execute(cmd: CmdPayload): Promise<void> {
 
 /** 把控制台新增日志推送给控制端（只推新增，避免开局刷历史） */
 function startLogPush(): void {
-  if (logWatchStarted) return;
-  logWatchStarted = true;
+  if (rt.logWatchStarted) return;
+  rt.logWatchStarted = true;
   let last = logStore.lines.length;
   watch(
     () => logStore.lines.length,
     () => {
       const arr = logStore.lines;
       if (arr.length > last) {
-        for (let i = last; i < arr.length; i++) void push("log", arr[i]);
+        for (let i = last; i < arr.length; i++) {
+          const line = arr[i];
+          // 重复推送器（多模块实例）会遍历同一数组：按行对象引用去重
+          if (rt.pushedLogLines.has(line)) continue;
+          rt.pushedLogLines.add(line);
+          void push("log", line);
+        }
         last = arr.length;
       }
     },

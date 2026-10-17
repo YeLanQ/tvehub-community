@@ -7,6 +7,7 @@ import { getProjectStore } from "../stores/project";
 import { getScriptsStore } from "../stores/scripts";
 import { prompt } from "../lib/prompt";
 import { api } from "../../lib/api";
+import { sceneApi } from "../../lib/scene-api";
 import { registerCommand } from "./registry";
 import { asRecord, asStrings } from "./args";
 import { isEditingText } from "./context";
@@ -161,6 +162,19 @@ function asTransformSnapshot(v: unknown): TransformSnapshot | undefined {
   return position && rotation && scale ? { position, rotation, scale } : undefined;
 }
 
+/** 后端场景文档树中按 id 取材质引用（核验用；节点缺失返回 null） */
+function docNodeMaterial(root: unknown, id: string): string | null {
+  const rec = asRecord(root);
+  if (!rec) return null;
+  if (rec.id === id) return typeof rec.material === "string" ? rec.material : null;
+  const children = Array.isArray(rec.children) ? rec.children : [];
+  for (const child of children) {
+    const hit = docNodeMaterial(child, id);
+    if (hit !== null) return hit;
+  }
+  return null;
+}
+
 registerCommand({
   id: "node.add",
   label: "添加节点",
@@ -201,6 +215,23 @@ registerCommand({
     }
     // 名字在创建时传入（factory 的 name 选项）：避免「add + rename」两条历史
     const name = args?.name ? String(args.name).trim() : "";
+    // 材质注册表是惰性加载的：先预取目标材质及其着色器再建节点/绑定，
+    // 避免首次引用材质时先落默认外观（甚至被迟到的 add 回显覆盖）。
+    const materialRel = typeof args?.material === "string" ? args.material.trim() : "";
+    if (materialRel) {
+      if (!engine().materials.has(materialRel)) {
+        await engine().materials.preload([materialRel]);
+      }
+      if (!engine().materials.has(materialRel)) {
+        throw new Error(
+          `材质未就绪（MATERIAL_NOT_READY）: ${materialRel}（文件缺失或解析失败，先 asset.refresh 或检查路径）`,
+        );
+      }
+      const shaderRel = engine().materials.shaderFor(materialRel);
+      if (shaderRel && !engine().shaders.has(shaderRel)) {
+        await engine().shaders.preload([shaderRel]);
+      }
+    }
     let node;
     switch (kind) {
       case "group":
@@ -387,6 +418,21 @@ registerCommand({
     if (name) applied.push("name");
     // 创建即落位/尺寸/材质：此前这些字段被静默丢弃（外部 Agent 只能两段式再写）
     applied.push(...applyAddExtras(node, args ?? {}));
+    // 材质是「成功响应里丢数据」的高危字段：等写链落账后回读后端文档核验。
+    // 只信后端权威态——前端镜像的本地乐观值在补丁未落账时也已正确，无法自证。
+    if (materialRel) {
+      await graph().quiesceWrites();
+      const doc = (await sceneApi.doc()) as { root?: unknown } | null;
+      const actual = docNodeMaterial(doc?.root, node.id);
+      if (actual !== materialRel) {
+        const at = applied.indexOf("material");
+        if (at >= 0) applied.splice(at, 1);
+        throw new Error(
+          `材质绑定未生效（MATERIAL_NOT_APPLIED）：请求 ${materialRel}，后端实际 ${actual ?? "(节点缺失)"}。` +
+            `节点 ${node.id} 已创建，可用 node.set {id, material} 重试`,
+        );
+      }
+    }
     return { id: node.id, name: node.name, type: kind, applied };
   },
 });

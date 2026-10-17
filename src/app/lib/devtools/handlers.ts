@@ -48,6 +48,27 @@ function sanitizeMcpName(method: string): string {
 const PROTOCOL_ARGS = ["autoOpen", "root"];
 
 /**
+ * 场景写方法：响应前等待前端写链静默（乐观应用 → 串行提交后端）。
+ * 必须等：`scene.tree` / `state.snapshot` 是 Rust 本地直答（不经前端链），
+ * 不等待时紧跟的读取会看到中间态——真实事故：`node.add` 返回成功，紧接着
+ * `scene.tree` 读到节点已建但材质补丁尚未落账，显示默认材质。
+ */
+const SETTLE_METHODS = new Set([
+  "node.add",
+  "node.remove",
+  "node.rename",
+  "node.set",
+  "node.component.add",
+  "node.component.set",
+  "scene.settings.patch",
+  "scene.save",
+  "history.undo",
+  "history.redo",
+  "state.restore",
+  "scene.write",
+]);
+
+/**
  * 固定参数方法的参数白名单（未知参数拒绝，避免拼错字段被静默忽略）。
  * 字段包类方法（node.add/node.set/node.component.set/material.set）由命令自身校验。
  */
@@ -131,5 +152,9 @@ export async function handleMethod(method: string, params: unknown): Promise<unk
     throw new Error(`未知方法: ${method}`);
   }
   const value = await runCommand(cmdId, normalizeParams(method, params), { logError: false });
+  if (SETTLE_METHODS.has(method)) {
+    // 后端写通道落账后才回复：调用方「写 → 读」不必自己等（scene.tree 本地直答）
+    await getEditorStore().engine.graph.quiesceWrites();
+  }
   return decorate(method, value);
 }

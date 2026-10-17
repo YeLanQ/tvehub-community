@@ -129,4 +129,31 @@ describe("属性提交竞态（回显抑制 + 串行链）", () => {
     releaseAll();
     await Promise.resolve();
   });
+
+  it("乱序 revision：迟到的 add 回显不覆盖较新的 patch 快照（材质引用）", () => {
+    // 无 transport：只验证事件回填的 revision 水位
+    const factory = new NodeFactory(createDefaultRegistry());
+    const client = new SceneClient(factory);
+    const mesh = factory.createMesh("box", { name: "M" });
+    client.add(mesh);
+    const base = mesh.toJSON() as JsonRecord;
+    const withMaterial = (rel: string): JsonRecord => ({ ...base, material: rel });
+    const evt = (revision: number, nodes: JsonRecord[], kind: SceneChangedEvent["kind"]) =>
+      ({
+        root: null,
+        rel: "",
+        kind,
+        nodeId: mesh.id,
+        revision,
+        nodes,
+        history: { canUndo: false, canRedo: false, depth: 0, undoLabel: null, redoLabel: null, labels: [] },
+        dirty: true,
+      }) as SceneChangedEvent;
+    // patch 的新快照先到（revision 2）
+    client.applyEvent(evt(2, [withMaterial("assets/Materials/WoodDark.mat")], "properties"));
+    expect(mesh.material).toBe("assets/Materials/WoodDark.mat");
+    // add 的旧快照迟到（revision 1，默认材质）→ 必须丢弃
+    client.applyEvent(evt(1, [withMaterial("internal/materials/Default.mat")], "add"));
+    expect(mesh.material).toBe("assets/Materials/WoodDark.mat");
+  });
 });

@@ -51,8 +51,19 @@
 ```
 
 `NO_ACTIVE_EDITOR` / `EDITOR_TIMEOUT` / `UNKNOWN_METHOD` / `TOOL_DISABLED` /
-`BAD_PARAMS` / `NOT_FOUND` / `PARSE_ERROR` / `SCENE_NOT_READY` / `CONNECTION` / `ERROR`。
+`BAD_PARAMS` / `NOT_FOUND` / `PARSE_ERROR` / `SCENE_NOT_READY` / `MATERIAL_NOT_READY` /
+`MATERIAL_NOT_APPLIED` / `CONNECTION` / `ERROR`。
 `SCENE_NOT_READY`：编辑器/场景仍在装载（冷启动自动开窗时命令先到），稍后重试即可。
+`MATERIAL_NOT_READY`：`node.add` 引用的 .mat 预取失败（文件缺失/解析失败），不会静默绑定默认材质。
+`MATERIAL_NOT_APPLIED`：节点已创建但后端回读的材质引用与请求不一致（写链落账后核验），
+不会在成功响应里谎报 `applied`。
+
+写命令（`node.add/remove/rename/set`、`node.component.*`、`scene.settings.patch`、
+`scene.save`、`history.*`、`state.restore`、`scene.write`）**在写链落账后才回响应**：
+收到成功即可直接 `scene.tree` 读数，不必自己等待或重试。`scene.tree` / `state.snapshot`
+由 Rust 本地直答（不经过前端链），所以这个等待是必须的——历史版本曾出现
+「`node.add` 成功但紧跟的读取看到默认材质」的读己之写缺口。
+`node.add` 的 `applied` 只列**核验生效**的字段（材质按后端文档回读核验）。
 
 ## 协议约束（自研客户端必须遵守）
 
@@ -75,9 +86,9 @@
 参数语义与返回值见本技能 references/editor-commands.md 与
 `src/app/lib/devtools/state.ts` 的 `MCP_TOOLS`。`devtools.catalog {verbose:true}`
 现在覆盖**全部命令**的参数 schema（无参数命令也显式给出空 properties，与「没文档」
-区分），新接入先读它。catalog 还返回 `capabilitiesRevision`（方法集+schema 的指纹，
-热更新导致 appVersion 不变时用它探测能力变化）与 `protocolParams`
-（`autoOpen`/`root` 两个协议级参数）。
+区分），新接入先读它。catalog 还返回 `capabilitiesRevision`（方法集 + schema +
+devtools 实现源码 + 手动行为版本的指纹；热更新导致 appVersion 不变时用它探测能力
+变化）与 `protocolParams`（`autoOpen`/`root` 两个协议级参数）。
 
 ## 结构化变更事件（subscribe 后）
 
@@ -98,6 +109,8 @@
 回读同一 .mat），因此一次材质修改只推一条 `material.changed`。`internal/` 内置
 资产（如默认材质）的缓存事件不推给外部订阅方。`revision` 保留在场景变更事件里
 用于增量同步。客户端可据此同步，不必反复 `scene.tree`。
+`log` 事件每条控制台行只推一次（推送器按行对象去重）；`scene.save` 造成的
+.scene 自写不再产生只有 `skipped` 的 `asset.changed` 噪音。
 
 ## 历史与场景设置
 
@@ -174,7 +187,8 @@
   缺失返回 `材质不存在`（NOT_FOUND），格式损坏返回 `材质解析失败`（PARSE_ERROR，
   带首个出错位置/字段）。
 - `preview.screenshot` 返回 `{source:"editor", blank, dataUrl, saved}`；`blank=true`
-  表示画面为纯色（渲染失败或本来就是纯色场景，需结合场景判断）；预览帧跨域不可读，
+  表示画面为纯色（渲染失败或本来就是纯色场景，需结合场景判断）；命令会先等两帧、
+  纯色时自动重试一次，但自动化仍建议对 `blank` 做一次重试。预览帧跨域不可读，
   `source` 只接受 `editor`。
 - 场景渲染设置（backgroundColor/ambientIntensity）走 `scene.settings.patch`；
   环境效果仍以 skybox/fog 节点为准。

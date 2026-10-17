@@ -304,8 +304,19 @@ const LOCAL_METHODS: &[&str] = &[
 /// 避免只能靠「发空对象读 BAD_PARAMS」反推参数。
 /// 能力指纹：方法集 + 参数 schema 的稳定哈希。热更新时 appVersion 不变，
 /// 客户端可据此探测能力变化（新增/删除方法或改 schema 都会变）。
+/// 能力版本：devtools 行为变更（不涉及方法/schema，例如绑定时序修复）时手动递增，
+/// 保证热更新后 capabilitiesRevision 仍能区分新旧行为。
+const CAPABILITIES_REV: &str = "2026-10-18.2";
+
+/// 能力指纹：方法集 + 参数 schema + 本文件源码 + 手动行为版本 的稳定哈希。
+/// 热更新时 appVersion 不变，客户端可据此探测能力变化。
 fn catalog_fingerprint() -> String {
     let mut canonical = String::new();
+    canonical.push_str(CAPABILITIES_REV);
+    canonical.push('\n');
+    // 本文件源码参与指纹：任何 devtools 协议/校验/事件实现改动都会改变能力版本
+    canonical.push_str(include_str!("devtools.rs"));
+    canonical.push('\n');
     for name in LOCAL_METHODS.iter().chain(EDITOR_METHODS.iter()) {
         canonical.push_str(name);
         canonical.push('\n');
@@ -1922,6 +1933,10 @@ fn error_code(msg: &str) -> &'static str {
         "BAD_PARAMS"
     } else if msg.contains("SCENE_NOT_READY") || msg.contains("场景尚未就绪") {
         "SCENE_NOT_READY"
+    } else if msg.contains("MATERIAL_NOT_READY") || msg.contains("材质未就绪") {
+        "MATERIAL_NOT_READY"
+    } else if msg.contains("MATERIAL_NOT_APPLIED") || msg.contains("材质绑定未生效") {
+        "MATERIAL_NOT_APPLIED"
     } else if msg.contains("无法连接") {
         "CONNECTION"
     } else {
@@ -2657,6 +2672,36 @@ pub async fn devtools_reply(
     Ok(())
 }
 
+/// 同一条日志在短窗内只广播一次：前端若存在重复推送器（HMR / 重复模块实例），
+/// 同一控制台行会被 push 两次，订阅方按日志计数就会翻倍。日志是遥测，
+/// 200ms 内逐字节相同的内容折叠为一条即可（结构化事件不受影响）。
+static LAST_LOG_PUSH: std::sync::OnceLock<std::sync::Mutex<Option<(u64, std::time::Instant)>>> =
+    std::sync::OnceLock::new();
+
+fn duplicate_log_push(sig: u64) -> bool {
+    const WINDOW: std::time::Duration = std::time::Duration::from_millis(200);
+    let cell = LAST_LOG_PUSH.get_or_init(|| std::sync::Mutex::new(None));
+    let Ok(mut last) = cell.lock() else {
+        return false;
+    };
+    if let Some((prev, at)) = *last {
+        if prev == sig && at.elapsed() < WINDOW {
+            return true;
+        }
+    }
+    *last = Some((sig, std::time::Instant::now()));
+    false
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
 /// 前端推送事件（console / 日志 / 状态变化）广播给所有客户端
 #[tauri::command]
 pub async fn devtools_push(
@@ -2672,6 +2717,9 @@ pub async fn devtools_push(
     let Ok(s) = serde_json::to_string(&msg) else {
         return Ok(());
     };
+    if event == "log" && duplicate_log_push(fnv1a(s.as_bytes())) {
+        return Ok(());
+    }
     let clients = rt.clients.lock().unwrap();
     for (_, tx) in clients.iter() {
         // 广播是遥测：慢客户端（不读/暂停）丢弃事件即可，绝不能阻塞持锁线程
@@ -2682,9 +2730,20 @@ pub async fn devtools_push(
 
 #[cfg(test)]
 mod tests {
-    use super::{error_code, read_message_line, LineRead};
+    use super::{duplicate_log_push, error_code, fnv1a, read_message_line, LineRead};
     use std::io::{BufReader, Write};
     use std::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn duplicate_log_push_folds_identical_lines() {
+        let line = fnv1a(r#"{"event":"log","data":{"text":"创建节点 A"}}"#.as_bytes());
+        assert!(!duplicate_log_push(line), "首条日志不折叠");
+        assert!(duplicate_log_push(line), "同一行短窗内第二次推送折叠");
+        assert!(
+            !duplicate_log_push(fnv1a(r#"{"event":"log","data":{"text":"创建节点 B"}}"#.as_bytes())),
+            "不同行不折叠"
+        );
+    }
 
     #[test]
     fn error_code_maps_stable_codes() {
@@ -2717,6 +2776,14 @@ mod tests {
         assert_eq!(
             error_code("场景尚未就绪（SCENE_NOT_READY）：编辑器仍在装载项目/场景"),
             "SCENE_NOT_READY"
+        );
+        assert_eq!(
+            error_code("材质未就绪（MATERIAL_NOT_READY）: assets/X.mat"),
+            "MATERIAL_NOT_READY"
+        );
+        assert_eq!(
+            error_code("材质绑定未生效（MATERIAL_NOT_APPLIED）：请求 assets/X.mat"),
+            "MATERIAL_NOT_APPLIED"
         );
         assert_eq!(
             error_code("无法连接开发者服务 127.0.0.1:39100"),
