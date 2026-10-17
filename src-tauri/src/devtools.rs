@@ -204,6 +204,7 @@ const METHOD_TO_TOOL: &[(&str, &str)] = &[
     ("node.rename", "nodeSet"),
     ("node.set", "nodeSet"),
     ("node.component.add", "nodeSet"),
+    ("node.component.set", "nodeSet"),
     ("shader.write", "assetWrite"),
     ("preview.start", "previewStart"),
     ("preview.stop", "previewStop"),
