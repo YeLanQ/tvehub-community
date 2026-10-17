@@ -9,7 +9,7 @@ describe("resolveSiblingRel", () => {
     // 修饰器输出恒为「目录/资源」，原始 uri 与已拼前缀地址解析结果一致（幂等）
     const prefixed = resolveSiblingRel("m/KY2DM", "m/KY2DM/Textures/a.png");
     expect(prefixed).toBe("m/KY2DM/Textures/a.png");
-    expect(resolveSiblingRel("m/KY2DM", prefixed)).toBe(prefixed); // 幂等
+    expect(resolveSiblingRel("m/KY2DM", prefixed as string)).toBe(prefixed); // 幂等（上一行已断言非空）
     // 修饰器拿到原始 uri（worker 空路径 parse）时补目录前缀
     expect(resolveSiblingRel("m/KY2DM", "Textures/a.png")).toBe("m/KY2DM/Textures/a.png");
     expect(resolveSiblingRel("", "a.png")).toBe("a.png");
