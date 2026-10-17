@@ -65,6 +65,12 @@
 「`node.add` 成功但紧跟的读取看到默认材质」的读己之写缺口。
 `node.add` 的 `applied` 只列**核验生效**的字段（材质按后端文档回读核验）。
 
+冷启动/新会话的第一条写命令会等 `sceneReady`（挂载管线与场景切换完成）再执行，
+正常**不需要**重试。若仍收到 `MATERIAL_NOT_READY`（材质资产确实缺失/解析失败），
+客户端固定套路即可兼顾：`node.add` → `MATERIAL_NOT_READY` → `asset.refresh {path}`
+→ 重试一次。`node.add` 的创建期属性（含材质/尺寸/落位）会并入 add 载荷，
+`node.added` 事件的节点快照就是最终态，不存在「先默认、后补丁」的中间事件。
+
 ## 协议约束（自研客户端必须遵守）
 
 - 地址 `127.0.0.1:<port>`，换行分隔 JSON，一条连接可连续发多条，按 `id` 配对；
@@ -86,9 +92,14 @@
 参数语义与返回值见本技能 references/editor-commands.md 与
 `src/app/lib/devtools/state.ts` 的 `MCP_TOOLS`。`devtools.catalog {verbose:true}`
 现在覆盖**全部命令**的参数 schema（无参数命令也显式给出空 properties，与「没文档」
-区分），新接入先读它。catalog 还返回 `capabilitiesRevision`（方法集 + schema +
-devtools 实现源码 + 手动行为版本的指纹；热更新导致 appVersion 不变时用它探测能力
-变化）与 `protocolParams`（`autoOpen`/`root` 两个协议级参数）。
+区分），新接入先读它。catalog 还返回：
+
+- `capabilitiesRevision`：方法集 + schema + devtools 实现源码 + 手动行为版本的指纹；
+  热更新导致 appVersion 不变时用它探测能力变化；
+- `capabilitiesNotes`：`[{revision, note}]` 能力变更说明（最新在前）。任何影响
+  请求/响应契约的改动（含前端实现的行为变更、事件形状、错误码）都会 bump
+  revision 并追加一条说明——客户端按 revision 做能力探测是可靠的；
+- `protocolParams`：`autoOpen`/`root` 两个协议级参数。
 
 所有返回的绝对路径（`project.open/create` 的 `path`、`project.build` 的
 `output_dir`、`preview.status` 的 `dir`）统一用**正斜杠**，客户端可直接拼接/去重/展示；

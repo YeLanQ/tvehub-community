@@ -304,9 +304,29 @@ const LOCAL_METHODS: &[&str] = &[
 /// 避免只能靠「发空对象读 BAD_PARAMS」反推参数。
 /// 能力指纹：方法集 + 参数 schema 的稳定哈希。热更新时 appVersion 不变，
 /// 客户端可据此探测能力变化（新增/删除方法或改 schema 都会变）。
-/// 能力版本：devtools 行为变更（不涉及方法/schema，例如绑定时序修复）时手动递增，
-/// 保证热更新后 capabilitiesRevision 仍能区分新旧行为。
-const CAPABILITIES_REV: &str = "2026-10-18.3";
+///
+/// **规则（必守）**：任何影响请求/响应契约的改动都要 bump 本常量并追加一条
+/// CAPABILITIES_NOTES——包括前端实现的行为变更（`src/app/commands/*`、
+/// `src/app/lib/devtools/*`、`src/framework/scene/SceneClient.ts` 的读写语义、
+/// 事件形状、错误码）。Rust 指纹只覆盖本文件与 schema，看不到前端行为变化。
+const CAPABILITIES_REV: &str = "2026-10-18.4";
+
+/// 能力变更说明（最新在前；catalog 随 `capabilitiesNotes` 返回）。
+/// 客户端可据此判断某个 revision 是否包含自己依赖的行为。
+const CAPABILITIES_NOTES: &[(&str, &str)] = &[
+    (
+        "2026-10-18.4",
+        "node.add 材质预取覆盖 props.material；创建期补丁并入 add 载荷（node.added 快照即最终态、单条撤销）；新增 MATERIAL_NOT_READY/MATERIAL_NOT_APPLIED；写命令响应前等写链静默；.scene 不进 asset.changed；绝对路径统一正斜杠；图事件只由 Rust 回显发射；冷启动等 sceneReady",
+    ),
+    (
+        "2026-10-18.2",
+        "scene.save 等本地方法写链语义、asset.changed 事件、错误码稳定映射",
+    ),
+    (
+        "2026-10-18.1",
+        "capabilitiesRevision 纳入 devtools 源码指纹（行为修复可被探测）",
+    ),
+];
 
 /// 能力指纹：方法集 + 参数 schema + 本文件源码 + 手动行为版本 的稳定哈希。
 /// 热更新时 appVersion 不变，客户端可据此探测能力变化。
@@ -364,6 +384,10 @@ fn catalog_response(app: &AppHandle, verbose: bool) -> serde_json::Value {
     serde_json::json!({
         "protocolVersion": 1,
         "capabilitiesRevision": catalog_fingerprint(),
+        "capabilitiesNotes": CAPABILITIES_NOTES
+            .iter()
+            .map(|(rev, note)| serde_json::json!({ "revision": rev, "note": note }))
+            .collect::<Vec<_>>(),
         "transport": "tcp-jsonlines",
         "verbose": verbose,
         "protocolParams": {
@@ -2735,6 +2759,17 @@ mod tests {
     use super::{duplicate_log_push, error_code, fnv1a, read_message_line, LineRead};
     use std::io::{BufReader, Write};
     use std::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn capabilities_notes_start_from_current_rev() {
+        let (rev, note) = super::CAPABILITIES_NOTES[0];
+        assert_eq!(rev, super::CAPABILITIES_REV, "变更说明首条必须是当前能力版本");
+        assert!(!note.is_empty(), "变更说明不能为空");
+        assert!(
+            super::CAPABILITIES_NOTES.iter().all(|(_, n)| !n.is_empty()),
+            "所有变更说明都不能为空"
+        );
+    }
 
     #[test]
     fn duplicate_log_push_folds_identical_lines() {
