@@ -377,7 +377,9 @@ export class SceneClient implements GraphLike {
   /** 新增节点（node.parentId 已指向目标父节点；失败自动回滚镜像） */
   add(node: Node, label?: string): void {
     this.linkAdded(node);
-    this.emit({ kind: "add", nodeId: node.id });
+    // 有后端：只乐观改镜像，事件等 Rust scene:changed 回显统一发射；
+    // 无后端（浏览器直开）/提交失败回滚：本地补发。
+    if (!this.transport) this.emit({ kind: "add", nodeId: node.id });
     const json = node.toJSON() as JsonRecord;
     if (!this.transport) return;
     this.pendingMark([node.id]);
@@ -418,7 +420,7 @@ export class SceneClient implements GraphLike {
       }
     };
     walk(root);
-    added.forEach((n) => this.emit({ kind: "add", nodeId: n.id }));
+    if (!this.transport) added.forEach((n) => this.emit({ kind: "add", nodeId: n.id }));
     // 提交文档保留 prefab 来源引用与组件 id（实例身份与绑定键稳定）
     const doc = serializePrefabTree(root, childrenInTree, { forAsset: false });
     if (!this.transport) return;
@@ -444,7 +446,7 @@ export class SceneClient implements GraphLike {
       if (res) captured.push(res);
     }
     if (!captured.length) return;
-    captured.forEach((c) => this.emit({ kind: "remove", nodeId: c.node.id }));
+    if (!this.transport) captured.forEach((c) => this.emit({ kind: "remove", nodeId: c.node.id }));
     if (!this.transport) return;
     const removedIds = captured.map((c) => c.node.id);
     this.pendingMark(removedIds);
@@ -480,7 +482,7 @@ export class SceneClient implements GraphLike {
       });
       if (this.reparentLocal(m.id, m.newParentId, m.newIndex)) {
         applied.push(m);
-        this.emit({ kind: "reparent", nodeId: m.id });
+        if (!this.transport) this.emit({ kind: "reparent", nodeId: m.id });
       }
     }
     if (!applied.length) return;
@@ -505,7 +507,7 @@ export class SceneClient implements GraphLike {
     if (!node) return;
     const oldName = node.name;
     node.name = name;
-    this.emit({ kind: "rename", nodeId: id });
+    if (!this.transport) this.emit({ kind: "rename", nodeId: id });
     if (!this.transport) return;
     this.pendingMark([id]);
     this.enqueueMutation(() => this.transport!.rename(id, name, label))
@@ -525,7 +527,7 @@ export class SceneClient implements GraphLike {
     const node = this.nodes.get(id);
     if (node) {
       applySnapshotTransform(node, after);
-      this.emit({ kind: "transform", nodeId: id });
+      if (!this.transport) this.emit({ kind: "transform", nodeId: id });
     }
     if (!this.transport) return;
     this.pendingMark([id]);
@@ -549,7 +551,7 @@ export class SceneClient implements GraphLike {
     const node = this.nodes.get(id);
     if (node) {
       node.applyJSON(after);
-      this.emit({ kind: "properties", nodeId: id });
+      if (!this.transport) this.emit({ kind: "properties", nodeId: id });
     }
     if (!this.transport) return;
     this.pendingMark([id]);
@@ -572,7 +574,7 @@ export class SceneClient implements GraphLike {
       const node = this.nodes.get(item.id);
       if (node) {
         node.applyJSON(item.after);
-        this.emit({ kind: "properties", nodeId: item.id });
+        if (!this.transport) this.emit({ kind: "properties", nodeId: item.id });
       }
     }
     if (!this.transport) return;
@@ -658,12 +660,23 @@ export class SceneClient implements GraphLike {
     this.emit({ kind: "replace", nodeId: this.rootId ?? "" });
   }
 
-  /** 后端 scene:changed 事件回执：历史状态 + 快照幂等回填 + 子树清理 */
+  /**
+   * 后端 scene:changed 事件回执：历史状态 + 快照幂等回填 + 子树清理。
+   * 图变更事件的**唯一发射源**：本地提交只乐观改镜像、不发事件，由回显统一
+   * 广播（避免「乐观 emit + 回显 emit」双份日志/双份同步；无后端直连时
+   * 由各提交方法本地补发）。
+   */
   applyEvent(evt: SceneChangedEvent): void {
     // 事件乱序防护：add/patch 等命令各自广播，事件队列可能让较旧的 add 回显
     // 晚于较新的 patch 回显到达——旧快照会把新属性（如材质引用）打回。
-    // revision 单调递增，旧 revision 一律丢弃；replace 视为新会话基线。
-    if (evt.kind !== "replace" && evt.revision < this.lastEventRevision) return;
+    // revision 单调递增，旧 revision 不再回填；但迟到的 add 仍需补发事件：
+    // 界面对象可能还没随回显创建（镜像已是更新态，不应用旧快照）。
+    if (evt.kind !== "replace" && evt.revision < this.lastEventRevision) {
+      if (evt.kind === "add" && this.nodes.has(evt.nodeId)) {
+        this.emit({ kind: "add", nodeId: evt.nodeId });
+      }
+      return;
+    }
     this.lastEventRevision = evt.revision;
     this.history.update(evt.history);
     if (evt.kind === "replace") {

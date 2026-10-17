@@ -219,6 +219,11 @@ registerCommand({
     // 避免首次引用材质时先落默认外观（甚至被迟到的 add 回显覆盖）。
     const materialRel = typeof args?.material === "string" ? args.material.trim() : "";
     if (materialRel) {
+      if (!engine().materials.isReady()) {
+        throw new Error(
+          "场景尚未就绪（SCENE_NOT_READY）：项目资产访问器未接入，材质无法解析；稍后重试",
+        );
+      }
       if (!engine().materials.has(materialRel)) {
         await engine().materials.preload([materialRel]);
       }

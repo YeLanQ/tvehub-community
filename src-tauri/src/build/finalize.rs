@@ -67,7 +67,7 @@ pub(super) fn finish_result(prepared: &Prepared, draft: ResultDraft) -> BuildRes
     BuildResult {
         ok: true,
         channel: prepared.job.channel.clone(),
-        output_dir: prepared.out.display().to_string(),
+        output_dir: crate::project::path_string(&prepared.out),
         main_scene: prepared.main_scene.clone(),
         main_scene_name: draft.main_name,
         scenes: draft.packed,

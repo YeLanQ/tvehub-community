@@ -106,14 +106,20 @@ const STRICT_PARAMS: Record<string, string[]> = {
   "node.component.add": ["id", "type", "script", "rel", "path", "lightKind"],
 };
 
-/** 等待编辑器场景就绪（冷启动/自动开窗时命令可能早于场景装载到达） */
+/**
+ * 等待编辑器场景就绪（冷启动/自动开窗时命令可能早于场景装载到达）。
+ * 必须等 `sceneReady` 而不只是 `mounted`：mounted 在首页交接项目的补装载
+ * **之前**就置位（视口先起渲染），此时资产访问器/场景会话还没接好——首个
+ * 材质写会预取失败（MATERIAL_NOT_READY）或打在即将替换的会话上。
+ * `sceneReady` 覆盖挂载管线全程与每次场景切换。
+ */
 async function waitEditorReady(): Promise<void> {
   const store = getEditorStore();
-  const deadline = Date.now() + 8000;
-  while (!store.state.mounted) {
+  const deadline = Date.now() + 15000;
+  while (!(store.state.mounted && store.state.sceneReady)) {
     if (Date.now() > deadline) {
       throw new Error(
-        "场景尚未就绪（SCENE_NOT_READY）：编辑器仍在装载项目/场景，请稍后重试",
+        "场景尚未就绪（SCENE_NOT_READY）：编辑器仍在装载/切换项目或场景，请稍后重试",
       );
     }
     await new Promise((r) => setTimeout(r, 50));

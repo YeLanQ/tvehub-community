@@ -24,6 +24,13 @@ pub struct ProjectInfo {
     pub scene_count: usize,
 }
 
+/// 文件系统路径 → 对外字符串：统一正斜杠。
+/// 项目根由前端以 `C:/...` 传入，`PathBuf::join` 会补系统分隔符，直接 display
+/// 会得到 `C:/a/b\c` 混用（客户端可能拿它拼接/去重/展示）。内部 PathBuf 不变。
+pub fn path_string(p: &Path) -> String {
+    p.to_string_lossy().replace('\\', "/")
+}
+
 /// 单个资产条目（递归扫描结果）
 #[derive(Serialize, Clone)]
 pub struct AssetEntry {
@@ -62,7 +69,7 @@ pub fn project_info(root: &Path) -> Result<ProjectInfo, String> {
     };
 
     Ok(ProjectInfo {
-        path: root.to_string_lossy().to_string(),
+        path: path_string(root),
         name,
         scene_count,
     })

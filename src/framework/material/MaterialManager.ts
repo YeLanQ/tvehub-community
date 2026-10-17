@@ -52,6 +52,12 @@ export class MaterialManager {
     return this.cache.has(rel);
   }
 
+  /** 文档读取器是否已接入：项目打开前为 false，此时 preload 会静默返回 0
+   * （调用方据此区分「项目未就绪」与「资产缺失/解析失败」） */
+  isReady(): boolean {
+    return this.fetcher !== null;
+  }
+
   /**
    * 取材质参数（同步）：已缓存返回缓存副本；未解析先回退内置默认参数，
    * 渲染不会因异步读取而中断——场景装载前应先用 preload() 预取。

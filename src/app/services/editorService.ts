@@ -301,6 +301,7 @@ export function mountEditor(container: HTMLElement): Promise<void> {
         }
         logStore.log("info", "编辑器已就绪", "engine");
       } finally {
+        store.markSceneReady();
         notifyMountSettled();
       }
     })();
@@ -445,6 +446,9 @@ export async function reloadEditorScene(
   const engine = store.engine;
   if (!store.state.mounted || engine.isDisposed()) return null;
   const boot = getBootLoadingStore();
+  // 会话/资产访问器正在更换：devtools 命令须等本次切换完成（否则首个材质写
+  // 会读到未接好的访问器，预取失败）
+  store.markSceneBusy();
   try {
     boot.activate("scene");
     const result = await sceneApi.open(root, rel, true, discard);
@@ -468,6 +472,8 @@ export async function reloadEditorScene(
   } catch (e) {
     logStore.log("error", `打开场景失败: ${e}`, "engine");
     return null;
+  } finally {
+    store.markSceneReady();
   }
 }
 

@@ -92,8 +92,7 @@ async function handleFsChanged(payload: FsChangedPayload): Promise<void> {
   }
 
   // 自己的写盘（material.set / 历史 undo）不重复刷新、不重复广播事件。
-  // 场景保存同样按自写处理：watcher 会把刚写下的 .scene 当外部修改推回来，
-  // 只在 asset.changed 里留下一条 skipped 噪音（save 路径已发 scene:self-save）。
+  // 场景保存同样按自写处理：watcher 会把刚写下的 .scene 当外部修改推回来。
   const normRel = (rel: string): string => rel.replace(/\\/g, "/");
   const savedSceneRel = normRel(projectStore.sceneRel || "");
   const isSelfScene = (rel: string): boolean =>
@@ -104,15 +103,22 @@ async function handleFsChanged(payload: FsChangedPayload): Promise<void> {
   if (!paths.length) return;
 
   const result = await refreshProjectAssets(paths);
-  // 结构化资产变更事件（外部 Agent 据此增量同步，不必轮询 asset.list）
-  void pushDevToolsEvent("asset.changed", {
-    root: payload.root,
-    paths,
-    kinds: result.kinds,
-    refreshed: result.refreshed,
-    pruned: result.pruned,
-    skipped: result.skipped,
-  });
+  // 结构化资产变更事件（外部 Agent 据此增量同步，不必轮询 asset.list）。
+  // .scene 不列入：场景有专属语义（replace/scene.changed + 脏态重载流程），
+  // 放进 asset.changed 只会多一条必然 skipped 的噪音（每次保存都会出现）。
+  const assetPaths = paths.filter((rel) => assetKindOf(rel) !== "scene");
+  if (assetPaths.length) {
+    void pushDevToolsEvent("asset.changed", {
+      root: payload.root,
+      paths: assetPaths,
+      kinds: Object.fromEntries(
+        Object.entries(result.kinds).filter(([rel]) => assetKindOf(rel) !== "scene"),
+      ),
+      refreshed: result.refreshed,
+      pruned: result.pruned,
+      skipped: result.skipped.filter((s) => assetKindOf(s.path) !== "scene"),
+    });
+  }
 
   // .scene：按脏态分级响应（不自动重载，避免冲掉未保存改动）
   if (paths.some((rel) => assetKindOf(rel) === "scene")) {

@@ -90,6 +90,10 @@
 devtools 实现源码 + 手动行为版本的指纹；热更新导致 appVersion 不变时用它探测能力
 变化）与 `protocolParams`（`autoOpen`/`root` 两个协议级参数）。
 
+所有返回的绝对路径（`project.open/create` 的 `path`、`project.build` 的
+`output_dir`、`preview.status` 的 `dir`）统一用**正斜杠**，客户端可直接拼接/去重/展示；
+内部文件系统路径不受影响。
+
 ## 结构化变更事件（subscribe 后）
 
 `{"method":"devtools.subscribe","params":{"events":true}}` 后，除 `log` 外还会收到：
@@ -109,8 +113,9 @@ devtools 实现源码 + 手动行为版本的指纹；热更新导致 appVersion
 回读同一 .mat），因此一次材质修改只推一条 `material.changed`。`internal/` 内置
 资产（如默认材质）的缓存事件不推给外部订阅方。`revision` 保留在场景变更事件里
 用于增量同步。客户端可据此同步，不必反复 `scene.tree`。
-`log` 事件每条控制台行只推一次（推送器按行对象去重）；`scene.save` 造成的
-.scene 自写不再产生只有 `skipped` 的 `asset.changed` 噪音。
+`log` 事件每条控制台行只推一次（推送器按行对象去重）。`.scene` 不进入
+`asset.changed`（场景走 `scene.changed`/replace 与脏态重载流程），因此 `scene.save`
+不再附带只有 `skipped` 的资产事件。
 
 ## 历史与场景设置
 

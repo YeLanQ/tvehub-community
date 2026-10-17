@@ -13,6 +13,10 @@ export interface EditorStore {
   nodeById: (id: string | null | undefined) => Node | undefined;
   childrenOf: (id: string) => Node[];
   markMounted: () => void;
+  /** 场景/资产访问器可安全执行命令（挂载管线或场景切换完成） */
+  markSceneReady: () => void;
+  /** 场景切换开始：会话与资产访问器正在更换，命令须等 markSceneReady */
+  markSceneBusy: () => void;
   /** 编辑器是否有未保存修改（保存按钮标记 / 关闭提醒用） */
   dirty: () => boolean;
   /** 场景已保存/已切换 → 清除脏标记 */
@@ -33,6 +37,12 @@ export interface EditorStore {
     historyDepth: number;
     historyLabels: string[];
     mounted: boolean;
+    /**
+     * 挂载管线**完全**落定（含首页交接项目的补装载）。与 mounted 的区别：
+     * mounted 在补装载前就置位（视口可以开始渲染），此时资产访问器/场景会话
+     * 仍可能切到一半——devtools 冷启动命令必须等到这里为 true。
+     */
+    sceneReady: boolean;
     dirty: boolean;
     /** 地形绘制模式（命令 editor.terrainPaint 切换；面板与引擎经此同步） */
     terrainPaintActive: boolean;
@@ -68,6 +78,7 @@ export function getEditorStore(): EditorStore {
     historyDepth: 0,
     historyLabels: [] as string[],
     mounted: false,
+    sceneReady: false,
     revision: 0,
     dirty: false,
     terrainPaintActive: false,
@@ -236,6 +247,12 @@ export function getEditorStore(): EditorStore {
     },
     markMounted: () => {
       state.mounted = true;
+    },
+    markSceneReady: () => {
+      state.sceneReady = true;
+    },
+    markSceneBusy: () => {
+      state.sceneReady = false;
     },
     dirty: () => state.dirty,
     markSaved: () => {

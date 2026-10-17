@@ -155,7 +155,7 @@ pub async fn preview_status(
     let dir = server
         .root
         .lock()
-        .map(|p| p.display().to_string())
+        .map(|p| crate::project::path_string(&p))
         .unwrap_or_default();
     Ok(serde_json::json!({
         "running": true,

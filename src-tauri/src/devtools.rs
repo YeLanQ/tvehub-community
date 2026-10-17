@@ -306,7 +306,7 @@ const LOCAL_METHODS: &[&str] = &[
 /// 客户端可据此探测能力变化（新增/删除方法或改 schema 都会变）。
 /// 能力版本：devtools 行为变更（不涉及方法/schema，例如绑定时序修复）时手动递增，
 /// 保证热更新后 capabilitiesRevision 仍能区分新旧行为。
-const CAPABILITIES_REV: &str = "2026-10-18.2";
+const CAPABILITIES_REV: &str = "2026-10-18.3";
 
 /// 能力指纹：方法集 + 参数 schema + 本文件源码 + 手动行为版本 的稳定哈希。
 /// 热更新时 appVersion 不变，客户端可据此探测能力变化。
@@ -1883,15 +1883,17 @@ fn scene_save_blocking(app: &AppHandle) -> Result<u64, String> {
     let label = active_editor_label(app).ok_or("没有活跃的编辑器窗口")?;
     let state = app.state::<crate::scene::SceneSession>();
     let mut hub = state.hub()?;
-    let revision = crate::scene::scene_save_for(&mut hub, &label)?;
-    // 通知前端窗口「这是自写盘」：文件监听必须跳过本次 .scene 事件，
-    // 否则保存会被当成外部修改触发整树重载（每存一次广播 replace）。
+    // 自写标记必须**先于写盘**送到前端：watcher 的 fs-changed 与 IPC 事件各自
+    // 异步派发，写后才发时本次事件可能先到，前端来不及打开抑制窗——.scene 会
+    // 被当成外部修改，每存一次多一条只有 skipped 的 asset.changed 噪音。
+    // 保存失败时标记只是提前了 2s 窗口，无副作用。
     if let Some((root, rel)) = crate::scene::scene_current_key(&hub, &label) {
         let _ = app.emit(
             "scene:self-save",
-            serde_json::json!({ "root": root, "rel": rel, "revision": revision }),
+            serde_json::json!({ "root": root, "rel": rel }),
         );
     }
+    let revision = crate::scene::scene_save_for(&mut hub, &label)?;
     // 保存完成事件：外部客户端可不等响应体也能收到（含 revision）
     broadcast_event(
         app,
