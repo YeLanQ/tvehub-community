@@ -95,18 +95,18 @@ function resolveParent(engine: EditorEngine, preferred?: string): Node | undefin
   return engine.graph.root;
 }
 
-export function addMesh(engine: EditorEngine, geometry: GeometryKind, parentId?: string, position?: Vec3): MeshNode {
+export function addMesh(engine: EditorEngine, geometry: GeometryKind, parentId?: string, position?: Vec3, name?: string): MeshNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createMesh(geometry, { parentId: parent?.id ?? null, position });
+  const node = engine.factory.createMesh(geometry, { parentId: parent?.id ?? null, position, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加数据化网格节点（source=data；载荷经检查器「Data Mesh」卡导入） */
-export function addDataMesh(engine: EditorEngine, parentId?: string, position?: Vec3): MeshNode {
+export function addDataMesh(engine: EditorEngine, parentId?: string, position?: Vec3, name?: string): MeshNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createDataMesh({ parentId: parent?.id ?? null, position });
+  const node = engine.factory.createDataMesh({ parentId: parent?.id ?? null, position, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
@@ -117,9 +117,9 @@ export function addDataMesh(engine: EditorEngine, parentId?: string, position?: 
  * 入图先渲染占位体，加载完成后自动刷新为实例并绑定动画。
  * position：出生位置（拖放落位）；缺省原点。
  */
-export function addModel(engine: EditorEngine, rel: string, parentId?: string, position?: Vec3): MeshNode {
+export function addModel(engine: EditorEngine, rel: string, parentId?: string, position?: Vec3, name?: string): MeshNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createModel(rel, { parentId: parent?.id ?? null, position });
+  const node = engine.factory.createModel(rel, { parentId: parent?.id ?? null, position, name });
   engine.graph.add(node);
   engine.select(node.id);
   // 预取触发 models.onChanged → refreshModelNodes 自动刷新（含广播）
@@ -132,9 +132,9 @@ export function addModel(engine: EditorEngine, rel: string, parentId?: string, p
  * source 传音频资产相对路径时直接绑定（非音频扩展名抛错）；
  * autoplay 节点在音频解锁后自动起播。
  */
-export function addAudio(engine: EditorEngine, parentId?: string, source = ""): AudioNode {
+export function addAudio(engine: EditorEngine, parentId?: string, source = "", name?: string): AudioNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createAudio({ parentId: parent?.id ?? null });
+  const node = engine.factory.createAudio({ parentId: parent?.id ?? null, name });
   if (source) {
     if (!isAudioAssetRel(source)) {
       throw new Error(`非音频资产: ${source}（支持 mp3/wav/ogg/m4a/aac/flac）`);
@@ -146,9 +146,9 @@ export function addAudio(engine: EditorEngine, parentId?: string, source = ""): 
   return node;
 }
 
-export function addLight(engine: EditorEngine, kind: LightNode["lightKind"], parentId?: string): LightNode {
+export function addLight(engine: EditorEngine, kind: LightNode["lightKind"], parentId?: string, name?: string): LightNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createLight(kind, { parentId: parent?.id ?? null });
+  const node = engine.factory.createLight(kind, { parentId: parent?.id ?? null, name });
   applyLightSpawn(node);
   engine.graph.add(node);
   engine.select(node.id);
@@ -159,9 +159,9 @@ export function addLight(engine: EditorEngine, kind: LightNode["lightKind"], par
  * 添加粒子系统节点（默认循环发射的叠加混合圆锥火花；入图即开始模拟，
  * 参数经检查器调整实时生效）。
  */
-export function addParticleSystem(engine: EditorEngine, parentId?: string): ParticleSystemNode {
+export function addParticleSystem(engine: EditorEngine, parentId?: string, name?: string): ParticleSystemNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createParticleSystem({ parentId: parent?.id ?? null });
+  const node = engine.factory.createParticleSystem({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
@@ -172,9 +172,9 @@ export function addParticleSystem(engine: EditorEngine, parentId?: string): Part
  * 参数经检查器调整实时重建）。地形面积大，不做出生点偏移，原地生成。
  * init：资产绑定初始化（资产面板「添加到场景」携带 .terrain 引用与快照设置）。
  */
-export function addTerrain(engine: EditorEngine, parentId?: string, init?: { asset?: string; terrain?: TerrainSettings }): TerrainNode {
+export function addTerrain(engine: EditorEngine, parentId?: string, init?: { asset?: string; terrain?: TerrainSettings }, name?: string): TerrainNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createTerrain({ parentId: parent?.id ?? null });
+  const node = engine.factory.createTerrain({ parentId: parent?.id ?? null, name });
   if (init?.asset) node.asset = init.asset;
   if (init?.terrain) node.terrain = cloneTerrainSettings(init.terrain);
   engine.graph.add(node);
@@ -182,9 +182,9 @@ export function addTerrain(engine: EditorEngine, parentId?: string, init?: { ass
   return node;
 }
 
-export function addCamera(engine: EditorEngine, parentId?: string): CameraNode {
+export function addCamera(engine: EditorEngine, parentId?: string, name?: string): CameraNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createCamera({ parentId: parent?.id ?? null });
+  const node = engine.factory.createCamera({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
@@ -194,36 +194,36 @@ export function addCamera(engine: EditorEngine, parentId?: string): CameraNode {
  * 添加导航区域节点（场景级烘焙载体：覆盖范围自动取所采样地形，
  * 入图即按场景内容烘焙可行走网格 + SDF 距离场）。
  */
-export function addNavArea(engine: EditorEngine, parentId?: string): NavAreaNode {
+export function addNavArea(engine: EditorEngine, parentId?: string, name?: string): NavAreaNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createNavArea({ parentId: parent?.id ?? null });
+  const node = engine.factory.createNavArea({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加导航代理节点（寻路移动体；目标点经检查器设置或脚本下发） */
-export function addNavAgent(engine: EditorEngine, parentId?: string): NavAgentNode {
+export function addNavAgent(engine: EditorEngine, parentId?: string, name?: string): NavAgentNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createNavAgent({ parentId: parent?.id ?? null });
+  const node = engine.factory.createNavAgent({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加状态机运行器节点（.fsm 资产的场景载体；资产经检查器绑定） */
-export function addFsmRunner(engine: EditorEngine, parentId?: string): FsmRunnerNode {
+export function addFsmRunner(engine: EditorEngine, parentId?: string, name?: string): FsmRunnerNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createFsmRunner({ parentId: parent?.id ?? null });
+  const node = engine.factory.createFsmRunner({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加行为树运行器节点（.bt 资产的场景载体；资产经检查器绑定） */
-export function addBtRunner(engine: EditorEngine, parentId?: string): BtRunnerNode {
+export function addBtRunner(engine: EditorEngine, parentId?: string, name?: string): BtRunnerNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createBtRunner({ parentId: parent?.id ?? null });
+  const node = engine.factory.createBtRunner({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
@@ -233,9 +233,9 @@ export function addBtRunner(engine: EditorEngine, parentId?: string): BtRunnerNo
  * 添加雾节点（场景环境级：线性雾 / 指数雾，与天空盒同语义）。
  * 场景里第一个 启用且可见 的雾节点决定渲染雾（见 applyFogFromGraph）。
  */
-export function addFog(engine: EditorEngine, kind: FogKind, parentId?: string): FogNode {
+export function addFog(engine: EditorEngine, kind: FogKind, parentId?: string, name?: string): FogNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createFog(kind, { parentId: parent?.id ?? null });
+  const node = engine.factory.createFog(kind, { parentId: parent?.id ?? null, name });
   // 场景只应用第一个 启用且可见 的雾节点；已有生效雾时给出提示避免困惑
   if (findFogNode(engine)) {
     console.info("[fog] 场景中已有生效的雾节点，新增雾不会替换当前雾效（可停用/删除前者）");
@@ -247,53 +247,53 @@ export function addFog(engine: EditorEngine, kind: FogKind, parentId?: string): 
 
 /** 添加 UI 画布（Canvas-Widget 的 Canvas；Widget 挂其下，屏幕叠加渲染）。
  *  defaults：项目设置默认值（设计分辨率/缩放模式），缺省 1280×720 / fixedauto */
-export function addUICanvas(engine: EditorEngine, parentId?: string, defaults?: { designWidth: number; designHeight: number; scaleMode?: UIScaleMode }): UICanvasNode {
+export function addUICanvas(engine: EditorEngine, parentId?: string, defaults?: { designWidth: number; designHeight: number; scaleMode?: UIScaleMode }, name?: string): UICanvasNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createUICanvas({ parentId: parent?.id ?? null }, defaults);
+  const node = engine.factory.createUICanvas({ parentId: parent?.id ?? null, name }, defaults);
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加 UI 图片 Widget（挂画布下参与叠加；画布外仅作普通面片显示） */
-export function addUIImage(engine: EditorEngine, parentId?: string): UIImageNode {
+export function addUIImage(engine: EditorEngine, parentId?: string, name?: string): UIImageNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createUIImage({ parentId: parent?.id ?? null });
+  const node = engine.factory.createUIImage({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加 UI 文本 Widget（2D 画布光栅化多行文本） */
-export function addUIText(engine: EditorEngine, parentId?: string): UITextNode {
+export function addUIText(engine: EditorEngine, parentId?: string, name?: string): UITextNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createUIText({ parentId: parent?.id ?? null });
+  const node = engine.factory.createUIText({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加 UI 按钮 Widget（运行时可点击；脚本经 engine.ui.onClick 订阅） */
-export function addUIButton(engine: EditorEngine, parentId?: string): UIButtonNode {
+export function addUIButton(engine: EditorEngine, parentId?: string, name?: string): UIButtonNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createUIButton({ parentId: parent?.id ?? null });
+  const node = engine.factory.createUIButton({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
 /** 添加 UI 布局容器（横向/竖向/网格排列直接子 UI 节点；自身经锚点定位） */
-export function addUILayout(engine: EditorEngine, parentId?: string): UILayoutNode {
+export function addUILayout(engine: EditorEngine, parentId?: string, name?: string): UILayoutNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createUILayout({ parentId: parent?.id ?? null });
+  const node = engine.factory.createUILayout({ parentId: parent?.id ?? null, name });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
 }
 
-export function addEmptyGroup(engine: EditorEngine, parentId?: string): Node {
+export function addEmptyGroup(engine: EditorEngine, parentId?: string, name?: string): Node {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.create("node", { parentId: parent?.id ?? null, name: "Group" });
+  const node = engine.factory.create("node", { parentId: parent?.id ?? null, name: name ?? "Group" });
   engine.graph.add(node);
   engine.select(node.id);
   return node;
@@ -303,9 +303,9 @@ export function addEmptyGroup(engine: EditorEngine, parentId?: string): Node {
  * 添加天空盒节点（场景环境级：程序化天空 / 默认立方体天空盒）。
  * 场景里第一个 启用且可见 的天空盒节点决定渲染背景（见 applySkyFromGraph）。
  */
-export function addSkybox(engine: EditorEngine, kind: SkyboxKind, parentId?: string): SkyboxNode {
+export function addSkybox(engine: EditorEngine, kind: SkyboxKind, parentId?: string, name?: string): SkyboxNode {
   const parent = resolveParent(engine, parentId);
-  const node = engine.factory.createSkybox(kind, { parentId: parent?.id ?? null });
+  const node = engine.factory.createSkybox(kind, { parentId: parent?.id ?? null, name });
   // 场景只应用第一个 启用且可见 的天空盒节点；已有生效天空时给出提示避免困惑
   if (findSkyboxNode(engine)) {
     console.info("[sky] 场景中已有生效的天空盒节点，新增天空盒不会替换背景（可停用/删除前者）");
@@ -321,7 +321,7 @@ export function addSkybox(engine: EditorEngine, kind: SkyboxKind, parentId?: str
  * @param scriptRel 脚本源路径（src/**.ts，须声明了 static nodeType）
  * @param nodeType  脚本类声明的节点类型元数据（kind/label）
  */
-export function addScriptNode(engine: EditorEngine, scriptRel: string, nodeType: { kind: string; label?: string }, parentId?: string): Node {
+export function addScriptNode(engine: EditorEngine, scriptRel: string, nodeType: { kind: string; label?: string }, parentId?: string, name?: string): Node {
   const parent = resolveParent(engine, parentId);
   // 基础节点按声明 kind 查表创建；表用 Record<ScriptNodeKind,…> 声明 ——
   // 新增节点类型漏登记会直接编译报错（字符串 switch 的 default 会静默退化成空组）
@@ -330,7 +330,7 @@ export function addScriptNode(engine: EditorEngine, scriptRel: string, nodeType:
     parent?.id ?? undefined,
   );
   // 命名：优先节点类型 label，其次脚本类名
-  base.name = nodeType.label?.trim() || scriptRel.replace(/\.ts$/, "").split("/").pop() || "Node";
+  base.name = name?.trim() || nodeType.label?.trim() || scriptRel.replace(/\.ts$/, "").split("/").pop() || "Node";
   // 自动挂脚本组件（随节点写入；一步 undo）
   const before = base.toJSON() as JsonRecord;
   base.components = [

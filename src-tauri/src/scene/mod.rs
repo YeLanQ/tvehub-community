@@ -16,6 +16,7 @@ pub mod shader;
 pub mod terrain;
 pub mod terrain_material;
 pub mod texcube;
+mod settings;
 
 use std::path::PathBuf;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -51,10 +52,18 @@ pub struct SceneChangedEvent {
 pub struct HistoryState {
     pub can_undo: bool,
     pub can_redo: bool,
+    /// 可撤销位置（undo 栈长度；undo 后减少）
     pub depth: usize,
+    /// 历史总条目数（undo + redo 两栈之和）
+    pub entries: usize,
+    /// 与 depth 同义（显式命名，客户端不必猜 depth 语义）
+    pub position: usize,
     pub undo_label: Option<String>,
     pub redo_label: Option<String>,
     pub labels: Vec<String>,
+    /// 本次 undo/redo 影响的资产相对路径（材质等外部副作用；前端据此重读）
+    #[serde(default)]
+    pub assets: Vec<String>,
 }
 
 /// scene_open / scene_load_doc 的装载结果
@@ -67,6 +76,15 @@ pub struct SceneLoadResult {
     pub model_refs: Vec<String>,
     pub revision: u64,
     pub history: HistoryState,
+    /// 是否真的从磁盘装载（false = 已有会话且复用了内存版本）
+    #[serde(default)]
+    pub opened: bool,
+    /// 当前会话是否有未保存修改
+    #[serde(default)]
+    pub dirty: bool,
+    /// 复用原因（already-open / already-open-dirty；新装载为 None）
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// 批量重挂目标（前端多选拖拽）
@@ -213,9 +231,12 @@ fn history_state(core: &SessionCore) -> HistoryState {
         can_undo: core.history.can_undo(),
         can_redo: core.history.can_redo(),
         depth: core.history.depth(),
+        entries: core.history.entries(),
+        position: core.history.depth(),
         undo_label: core.history.undo_label().map(str::to_string),
         redo_label: core.history.redo_label().map(str::to_string),
         labels: core.history.labels(),
+        assets: Vec::new(),
     }
 }
 
@@ -300,6 +321,9 @@ fn load_result(core: &SessionCore, doc: &Value) -> SceneLoadResult {
         model_refs,
         revision: core.revision,
         history: history_state(core),
+        opened: true,
+        dirty: core.dirty,
+        reason: None,
     }
 }
 
@@ -314,15 +338,30 @@ fn upsert_session(
     root_path: Option<PathBuf>,
     force: bool,
 ) -> (SceneLoadResult, Option<GraphChange>) {
+    upsert_session_with(hub, label, key, disk_doc, root_path, force, false)
+}
+
+/// 同 upsert_session，额外支持 discard_dirty：true 时即使会话有未保存修改也
+/// 从磁盘重装（devtools scene.open {discard:true} 的「放弃改动」语义）。
+#[allow(clippy::too_many_arguments)]
+fn upsert_session_with(
+    hub: &mut SceneHub,
+    label: &str,
+    key: SessionKey,
+    disk_doc: &Value,
+    root_path: Option<PathBuf>,
+    force: bool,
+    discard_dirty: bool,
+) -> (SceneLoadResult, Option<GraphChange>) {
     if hub.sessions.contains_key(&key) {
         let dirty = hub
             .sessions
             .get(&key)
             .map(|c| c.dirty)
             .unwrap_or(false);
-        if force && !dirty {
-            // 强制重载（asset.write 等外部直写场景文件后重开）：会话干净才安全，
-            // 有未保存修改仍复用（脏保护与 fs-watch 的 .scene 策略一致）
+        if force && (discard_dirty || !dirty) {
+            // 强制重载（asset.write 等外部直写场景文件后重开）：默认会话干净才安全；
+            // discard_dirty=true 时才允许丢弃未保存修改（显式放弃）。
             let core = hub.sessions.get_mut(&key).expect("session exists");
             let replace = load_core_from_doc(core, disk_doc, root_path, &key.rel);
             hub.current.insert(label.to_string(), key.clone());
@@ -330,10 +369,22 @@ fn upsert_session(
             let doc = build_doc(core);
             return (load_result(core, &doc), replace);
         }
-    } else {
-        let core = hub.sessions.entry(key.clone()).or_default();
-        load_core_from_doc(core, disk_doc, root_path, &key.rel);
+        // 复用内存会话：明确告知调用方没有从磁盘重载
+        hub.current.insert(label.to_string(), key.clone());
+        let core = hub.sessions.get(&key).expect("session exists");
+        let doc = build_doc(core);
+        let mut result = load_result(core, &doc);
+        result.opened = false;
+        result.dirty = core.dirty;
+        result.reason = Some(if core.dirty {
+            "already-open-dirty".to_string()
+        } else {
+            "already-open".to_string()
+        });
+        return (result, None);
     }
+    let core = hub.sessions.entry(key.clone()).or_default();
+    load_core_from_doc(core, disk_doc, root_path, &key.rel);
     hub.current.insert(label.to_string(), key.clone());
     let core = hub.sessions.get(&key).expect("session exists");
     let doc = build_doc(core);
@@ -354,6 +405,7 @@ pub async fn scene_open(
     root: String,
     rel: String,
     force: Option<bool>,
+    discard: Option<bool>,
 ) -> Result<SceneLoadResult, String> {
     let root_path = PathBuf::from(&root);
     let path = crate::project::resolve_in_root(&root_path, &rel)?;
@@ -373,13 +425,14 @@ pub async fn scene_open(
     // 复合键 (root, rel)：同一项目的同一场景全窗口共享会话（保留未保存修改与撤销历史）；
     // 不同项目天然隔离（key 不同），无需额外 same_root 校验。
     let key = SessionKey { root: Some(root.clone()), rel: rel.clone() };
-    let (result, replace) = upsert_session(
+    let (result, replace) = upsert_session_with(
         &mut hub,
         webview.label(),
         key.clone(),
         &doc,
         Some(root_path),
         force.unwrap_or(false),
+        discard.unwrap_or(false),
     );
     // 磁盘重装广播：共享该会话的其他窗口按 replace 整树重建镜像
     if let Some(change) = replace {
@@ -690,16 +743,36 @@ pub async fn scene_undo(
 ) -> Result<HistoryState, String> {
     let mut core = state.write_current(&webview.label())?;
     let outcome = {
-        let SessionCore { history, graph, .. } = &mut *core;
-        history.undo(graph)
+        let SessionCore {
+            history,
+            graph,
+            envelope,
+            root_path,
+            ..
+        } = &mut *core;
+        history.undo_full(graph, envelope, root_path.as_deref())
     };
-    let Some((_, changes)) = outcome else {
+    let Some((_, changes, assets, settings)) = outcome? else {
         return Ok(history_state(&core));
     };
     core.dirty = true;
     let key = core.key().clone();
+    if let Some(settings) = settings {
+        crate::devtools::broadcast_event(
+            &app,
+            "settings.changed",
+            serde_json::json!({
+                "root": key.root,
+                "rel": key.rel,
+                "settings": settings,
+                "source": "undo",
+            }),
+        );
+    }
     emit_changes(&app, &key, &mut core, changes);
-    Ok(history_state(&core))
+    let mut state = history_state(&core);
+    state.assets = assets;
+    Ok(state)
 }
 
 /// 重做（广播变更事件）
@@ -711,16 +784,36 @@ pub async fn scene_redo(
 ) -> Result<HistoryState, String> {
     let mut core = state.write_current(&webview.label())?;
     let outcome = {
-        let SessionCore { history, graph, .. } = &mut *core;
-        history.redo(graph)
+        let SessionCore {
+            history,
+            graph,
+            envelope,
+            root_path,
+            ..
+        } = &mut *core;
+        history.redo_full(graph, envelope, root_path.as_deref())
     };
-    let Some((_, changes)) = outcome else {
+    let Some((_, changes, assets, settings)) = outcome? else {
         return Ok(history_state(&core));
     };
     core.dirty = true;
     let key = core.key().clone();
+    if let Some(settings) = settings {
+        crate::devtools::broadcast_event(
+            &app,
+            "settings.changed",
+            serde_json::json!({
+                "root": key.root,
+                "rel": key.rel,
+                "settings": settings,
+                "source": "redo",
+            }),
+        );
+    }
     emit_changes(&app, &key, &mut core, changes);
-    Ok(history_state(&core))
+    let mut state = history_state(&core);
+    state.assets = assets;
+    Ok(state)
 }
 
 /// 当前历史状态（UI 同步用）
@@ -843,8 +936,9 @@ pub async fn scene_doc(
     scene_doc_for(&mut hub, webview.label())
 }
 
-/// 保存调用窗口的当前场景（后端序列化（保留信封字段）→ pretty JSON 写盘 → 清脏标记）
-pub(crate) fn scene_save_for(hub: &mut SceneHub, label: &str) -> Result<(), String> {
+/// 保存调用窗口的当前场景（后端序列化（保留信封字段）→ pretty JSON 写盘 → 清脏标记）。
+/// 返回保存时的场景 revision；写盘同步完成，返回即代表已落盘且 dirty 已清。
+pub(crate) fn scene_save_for(hub: &mut SceneHub, label: &str) -> Result<u64, String> {
     let Some(key) = hub.current.get(label).cloned() else {
         return Err("未打开场景（无保存目标）".into());
     };
@@ -867,7 +961,7 @@ pub(crate) fn scene_save_for(hub: &mut SceneHub, label: &str) -> Result<(), Stri
         let _ = crate::project::ensure_meta(&path);
     }
     core.dirty = false;
-    Ok(())
+    Ok(core.revision)
 }
 
 /// 保存调用窗口的当前场景
@@ -878,7 +972,160 @@ pub async fn scene_save(
 ) -> Result<(), String> {
     let mut hub = state.hub()?;
     let label = webview.label().to_string();
-    scene_save_for(&mut hub, &label)
+    scene_save_for(&mut hub, &label).map(|_| ())
+}
+
+/// 任一已绑定场景的编辑器窗口 label（无聚焦记录时的路由兜底：冷启动窗口
+/// 尚未收到 Focused 事件，但会话已经建立，hello/editor.state 应看到同一个窗口）。
+pub(crate) fn any_editor_label(hub: &SceneHub) -> Option<String> {
+    hub.current
+        .keys()
+        .find(|label| label.starts_with("editor-"))
+        .cloned()
+}
+
+/// 窗口当前绑定的会话标识（root, rel；保存/事件自描述用）
+pub(crate) fn scene_current_key(hub: &SceneHub, label: &str) -> Option<(Option<String>, String)> {
+    hub.current
+        .get(label)
+        .map(|k| (k.root.clone(), k.rel.clone()))
+}
+
+/// 读取调用窗口的场景 settings（信封字段；未设置返回空对象）
+pub(crate) fn scene_settings_get_for(hub: &mut SceneHub, label: &str) -> Result<Value, String> {
+    let Some(key) = hub.current.get(label).cloned() else {
+        return Err("未打开场景（无设置目标）".into());
+    };
+    let Some(core) = hub.sessions.get(&key) else {
+        return Err(format!("当前场景会话缺失: {:?}", key));
+    };
+    Ok(core
+        .envelope
+        .get("settings")
+        .cloned()
+        .unwrap_or_else(|| Value::Object(JsonMap::new())))
+}
+
+/// 对象深合并（patch 覆盖标量/数组，对象逐键递归）
+fn deep_merge(dst: &mut JsonMap, patch: &JsonMap) {
+    for (k, v) in patch {
+        match (dst.get_mut(k).and_then(Value::as_object_mut), v.as_object()) {
+            (Some(d), Some(p)) => deep_merge(d, p),
+            _ => {
+                dst.insert(k.clone(), v.clone());
+            }
+        }
+    }
+}
+
+/// settings 补丁结果：合并后的 settings + 越界收敛字段（与 material.set 的 clamped 同语义）
+pub(crate) struct SettingsPatchOutcome {
+    pub settings: Value,
+    pub clamped: Vec<String>,
+}
+
+/// 深合并 patch 进场景 settings（只改给定字段；标脏随保存落盘，进撤销历史）
+pub(crate) fn scene_settings_patch_for(
+    hub: &mut SceneHub,
+    label: &str,
+    patch: &Value,
+) -> Result<SettingsPatchOutcome, String> {
+    let Some(key) = hub.current.get(label).cloned() else {
+        return Err("未打开场景（无设置目标）".into());
+    };
+    let Some(core) = hub.sessions.get_mut(&key) else {
+        return Err(format!("当前场景会话缺失: {:?}", key));
+    };
+    let normalized = settings::normalize_settings_patch(patch)?;
+    let p = normalized
+        .patch
+        .as_object()
+        .ok_or("patch 应为 JSON 对象（如 {rendering:{backgroundColor:\"#112233\"}}）")?;
+    let before = core.envelope.get("settings").cloned();
+    let entry = core
+        .envelope
+        .entry("settings".to_string())
+        .or_insert_with(|| Value::Object(JsonMap::new()));
+    let settings = entry
+        .as_object_mut()
+        .ok_or("场景 settings 不是对象（先用 scene.settings.get 检查）")?;
+    deep_merge(settings, p);
+    let after = Value::Object(settings.clone());
+    core.dirty = true;
+    core.revision += 1;
+    core.history.push(SceneCmd {
+        label: "Scene Settings".into(),
+        kind: CmdKind::Settings {
+            before,
+            after: after.clone(),
+        },
+    });
+    Ok(SettingsPatchOutcome {
+        settings: after,
+        clamped: normalized.clamped,
+    })
+}
+
+/// 读取调用窗口的场景 settings
+#[tauri::command]
+pub async fn scene_settings_get(
+    webview: tauri::Webview,
+    state: tauri::State<'_, SceneSession>,
+) -> Result<Value, String> {
+    let mut hub = state.hub()?;
+    scene_settings_get_for(&mut hub, webview.label())
+}
+
+/// 深合并 patch 进场景 settings（单字段配置通道，避免整份 scene.write）
+#[tauri::command]
+pub async fn scene_settings_patch(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SceneSession>,
+    patch: Value,
+) -> Result<Value, String> {
+    let mut hub = state.hub()?;
+    let key = hub.current.get(webview.label()).cloned();
+    let outcome = scene_settings_patch_for(&mut hub, webview.label(), &patch)?;
+    if let Some(key) = key {
+        // 结构化事件覆盖 settings：订阅方不会漏掉环境光/背景色变化
+        crate::devtools::broadcast_event(
+            &app,
+            "settings.changed",
+            serde_json::json!({
+                "root": key.root,
+                "rel": key.rel,
+                "settings": outcome.settings,
+                "patch": patch,
+                "clamped": outcome.clamped,
+                "source": "patch",
+            }),
+        );
+    }
+    Ok(serde_json::json!({
+        "settings": outcome.settings,
+        "clamped": outcome.clamped,
+    }))
+}
+
+/// 把一次材质资产写入记入场景撤销栈（文件已由 material_write 落盘）。
+/// before/after 为 .mat 全文；undo/redo 时后端写回对应文本。
+#[tauri::command]
+pub async fn scene_push_material_edit(
+    webview: tauri::Webview,
+    state: tauri::State<'_, SceneSession>,
+    rel: String,
+    before: String,
+    after: String,
+) -> Result<HistoryState, String> {
+    let mut core = state.write_current(&webview.label())?;
+    if before != after {
+        core.history.push(SceneCmd {
+            label: format!("Material {rel}"),
+            kind: CmdKind::AssetWrite { rel, before, after },
+        });
+    }
+    Ok(history_state(&core))
 }
 
 /// 关闭调用窗口的当前会话指针（不落盘）。若其他窗口仍引用同一会话键则保留会话数据
@@ -948,19 +1195,39 @@ mod tests {
         assert_eq!(result.doc["root"]["name"], "New");
         assert_eq!(replace.as_ref().map(|c| c.kind), Some("replace"));
 
-        // 脏会话（未保存修改）+ force：仍复用内存版本（脏保护）
+        // 脏会话（未保存修改）+ force：仍复用内存版本（脏保护），并如实报告
         hub.sessions.get_mut(&key).expect("session exists").dirty = true;
         let (result, replace) =
             upsert_session(&mut hub, "w", key.clone(), &mk("Disk"), Some(PathBuf::from("P")), true);
         assert!(replace.is_none(), "脏会话不重装");
         assert_eq!(result.doc["root"]["name"], "New");
+        assert!(!result.opened, "复用时 opened=false");
+        assert!(result.dirty, "复用时报告脏状态");
+        assert_eq!(result.reason.as_deref(), Some("already-open-dirty"));
+
+        // discard_dirty=true：显式放弃未保存修改，强制磁盘重装
+        let (result, replace) = upsert_session_with(
+            &mut hub,
+            "w",
+            key.clone(),
+            &mk("Disk"),
+            Some(PathBuf::from("P")),
+            true,
+            true,
+        );
+        assert!(replace.is_some(), "discard 应重装并广播 replace");
+        assert_eq!(result.doc["root"]["name"], "Disk");
+        assert!(result.opened, "discard 后 opened=true");
+        assert!(!result.dirty, "discard 后脏标记清除");
+        assert_eq!(result.reason, None);
 
         // 不带 force（缺省）：干净会话也复用（历史行为）
-        hub.sessions.get_mut(&key).expect("session exists").dirty = false;
         let (result, replace) =
             upsert_session(&mut hub, "w", key, &mk("Disk"), Some(PathBuf::from("P")), false);
         assert!(replace.is_none(), "缺省不重装");
-        assert_eq!(result.doc["root"]["name"], "New");
+        assert_eq!(result.doc["root"]["name"], "Disk");
+        assert!(!result.opened);
+        assert_eq!(result.reason.as_deref(), Some("already-open"));
     }
 
     /// 真实模板场景（前端 TS 产物）→ Rust 解析建图 → 重建文档：
@@ -1046,5 +1313,59 @@ mod tests {
         assert!(!core.graph.contains("node_mtt5n81u6sj3g"), "undo 摘除整棵实例");
         core.history.redo(&mut core.graph).unwrap();
         assert!(core.graph.contains("meshNode_mtt5n81u9zzt8"), "redo 重建整棵实例");
+    }
+
+    #[test]
+    fn deep_merge_nested_objects_and_overwrites_scalars() {
+        let mut dst = serde_json::json!({
+            "rendering": { "backgroundColor": "#000000", "ambientIntensity": 0.3 },
+            "flag": 1
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let patch = serde_json::json!({
+            "rendering": { "ambientIntensity": 0.5 },
+            "flag": 2,
+            "extra": { "a": 1 }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        deep_merge(&mut dst, &patch);
+        assert_eq!(dst["rendering"]["backgroundColor"], "#000000");
+        assert_eq!(dst["rendering"]["ambientIntensity"], 0.5);
+        assert_eq!(dst["flag"], 2);
+        assert_eq!(dst["extra"]["a"], 1);
+    }
+
+    #[test]
+    fn settings_patch_merges_and_marks_dirty() {
+        let mut hub = SceneHub::default();
+        let key = SessionKey { root: Some("P".into()), rel: "assets/Main.scene".into() };
+        let doc = serde_json::json!({
+            "type": "scene",
+            "settings": { "rendering": { "backgroundColor": "#000000" } },
+            "root": { "id": "a", "name": "S", "type": "group", "children": [] }
+        });
+        upsert_session(&mut hub, "w", key.clone(), &doc, Some(PathBuf::from("P")), false);
+        let entries_before = hub.sessions.get(&key).unwrap().history.entries();
+        let outcome = scene_settings_patch_for(
+            &mut hub,
+            "w",
+            &serde_json::json!({ "rendering": { "ambientIntensity": 0.5 } }),
+        )
+        .expect("patch 应成功");
+        assert!(outcome.clamped.is_empty(), "范围内不应报 clamped");
+        let out = outcome.settings;
+        assert_eq!(out["rendering"]["backgroundColor"], "#000000");
+        assert_eq!(out["rendering"]["ambientIntensity"], 0.5);
+        assert!(hub.sessions.get(&key).expect("session").dirty, "patch 后应标脏");
+        assert_eq!(
+            hub.sessions.get(&key).unwrap().history.entries(),
+            entries_before + 1,
+            "settings patch 应进撤销栈"
+        );
+        assert_eq!(scene_settings_get_for(&mut hub, "w").unwrap(), out);
     }
 }

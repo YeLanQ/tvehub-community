@@ -125,6 +125,81 @@ async function installCmdListener(): Promise<void> {
 export async function ensureCmdListener(): Promise<void> {
   if (!isEditorWindow()) return;
   await installCmdListener();
+  await installEventBridge();
+}
+
+/**
+ * 结构化变更事件桥：把后端 scene:changed（权威、带 revision/history）与引擎
+ * 缓存变更转成 devtools 事件推给已订阅客户端（事件默认不推；push 内部按
+ * devtools.enabled 短路）。只装一次；HMR 重复导入由模块级标记兜底。
+ */
+let eventBridgeStarted = false;
+
+function sceneEventName(kind: string): string {
+  if (kind === "add") return "node.added";
+  if (kind === "remove") return "node.removed";
+  if (kind === "replace" || kind === "clear") return "scene.changed";
+  return "node.changed";
+}
+
+/** 事件合并窗：同一资产的连续刷新（cachePut + refresh + 文件监听回读）只推一条 */
+const COALESCE_MS = 120;
+const pendingEventTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function pushCoalesced(event: string, data: unknown, key: string): void {
+  const slot = `${event}:${key}`;
+  const prev = pendingEventTimers.get(slot);
+  if (prev) clearTimeout(prev);
+  pendingEventTimers.set(
+    slot,
+    setTimeout(() => {
+      pendingEventTimers.delete(slot);
+      void push(event, data);
+    }, COALESCE_MS),
+  );
+}
+
+async function installEventBridge(): Promise<void> {
+  if (eventBridgeStarted) return;
+  eventBridgeStarted = true;
+  const [{ sceneApi }, { getProjectStore }, { getEditorStore }] = await Promise.all([
+    import("../../../lib/scene-api"),
+    import("../../stores/project"),
+    import("../../stores/editor"),
+  ]);
+  const project = getProjectStore();
+  await sceneApi.subscribe((e) => {
+    if (e.root !== project.currentPath || e.rel !== project.sceneRel) return;
+    void push(sceneEventName(e.kind), {
+      kind: e.kind,
+      nodeId: e.nodeId,
+      revision: e.revision,
+      dirty: e.dirty,
+      nodes: e.nodes,
+      history: e.history,
+    });
+  });
+  const engine = getEditorStore().engine;
+  // 选中事件在批量删除时会连续多拍（含清空到 null），合并成最后一拍
+  engine.events.on("select:changed", (p) =>
+    pushCoalesced("selection.changed", p, "selection"),
+  );
+  const byRel = (event: string) => (payload: unknown) => {
+    const p = (payload ?? {}) as { rel?: string; nodeId?: string };
+    const rel = p.rel ?? p.nodeId ?? "all";
+    // 内置资产（internal/ 默认材质等）不属于项目内容，不推给外部订阅方
+    if (rel.startsWith("internal/")) return;
+    pushCoalesced(event, p, rel);
+  };
+  engine.events.on("material:changed", byRel("material.changed"));
+  engine.events.on("shader:changed", byRel("shader.changed"));
+  engine.events.on("model:changed", byRel("model.changed"));
+  engine.events.on("animation:changed", byRel("animation.changed"));
+}
+
+/** 供其他服务（fs-watch 等）推送结构化事件；未启用服务时静默丢弃 */
+export async function pushDevToolsEvent(event: string, data: unknown): Promise<void> {
+  await push(event, data);
 }
 
 interface CmdPayload {

@@ -11,6 +11,11 @@ import type { Vec3 } from "../prototype/types";
 /** 基元几何类型 key（写入 MeshNode.geometry 字段） */
 export type GeometryKind = "box" | "sphere" | "plane" | "quad" | "cylinder" | "cone" | "torus" | "capsule";
 
+/** 全部合法基元 key（命令层校验/报错提示与注册表同源的静态清单） */
+export const GEOMETRY_KINDS: GeometryKind[] = [
+  "box", "sphere", "plane", "quad", "cylinder", "cone", "torus", "capsule",
+];
+
 /** 单个基元几何的类型定义（工厂产物 = three BufferGeometry） */
 export interface GeometryProvider {
   /** 类型 key（MeshNode.geometry） */

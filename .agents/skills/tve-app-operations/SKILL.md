@@ -33,6 +33,7 @@ references/editor-commands.md。
 | 白板：工具/图层/文本/快捷键 | references/whiteboard-usage.md |
 | 白板：文件管理/改名防覆盖/放映/共享发布 | references/whiteboard-files.md |
 | TvE 助手面板（两栏/项目工作区/卡片/供应商/工具权限） | references/assistant.md |
+| 进程外 Agent/脚本连 devtools TCP（统一客户端/端口发现/自动开窗） | references/devtools-connection.md |
 
 每单元三段：**操作面**（动作 → 入口/命令，含 文件:行号）→ **规则/要点** →
 **测试例**（对应 spec/smoke 或推荐写法）。

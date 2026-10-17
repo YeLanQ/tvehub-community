@@ -127,6 +127,45 @@ pub async fn start_web_preview_server(
     Ok(url)
 }
 
+/// 查询调用窗口的预览服务器状态（running/ready/url/port）。
+/// ready 为一次真实 TCP 连接探测：子进程监听就绪前 URL 可能已返回，
+/// 外部 Agent 拿到 url 立刻请求会连接失败——调用方据此等待就绪再返回。
+#[tauri::command]
+pub async fn preview_status(
+    state: tauri::State<'_, PreviewServerState>,
+    webview: tauri::Webview,
+) -> Result<serde_json::Value, String> {
+    let label = webview.label().to_string();
+    let servers = state.inner.lock().map_err(|e| e.to_string())?;
+    let Some(server) = servers.get(&label) else {
+        return Ok(serde_json::json!({ "running": false, "ready": false }));
+    };
+    let url = server.base_url.clone();
+    let addr = url.trim_start_matches("http://").to_string();
+    let ready = addr
+        .parse::<std::net::SocketAddr>()
+        .ok()
+        .map(|a| TcpStream::connect_timeout(&a, Duration::from_millis(200)).is_ok())
+        .unwrap_or(false);
+    let port = addr
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(0);
+    let dir = server
+        .root
+        .lock()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    Ok(serde_json::json!({
+        "running": true,
+        "ready": ready,
+        "url": url,
+        "port": port,
+        "dir": dir,
+    }))
+}
+
 /// 停止调用窗口的网页预览服务器（释放端口；不影响其他窗口的预览）
 #[tauri::command]
 pub async fn stop_web_preview(

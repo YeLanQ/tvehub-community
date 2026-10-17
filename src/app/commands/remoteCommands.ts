@@ -13,6 +13,7 @@ import { handoffToWindow } from "../lib/window-handoff";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { JsonRecord } from "../../framework/prototype/types";
 import { saveCurrentSceneToMain } from "../lib/save-scene";
+import { markAssetSelfWrite, refreshProjectAssets } from "../services/fs-watch";
 import { collectExportFiles } from "../lib/build";
 import {
   defaultExportTemplateId,
@@ -21,7 +22,8 @@ import {
   runBuild,
 } from "../lib/build-export";
 import { registerCommand } from "./registry";
-import { asBool, asStringList } from "./args";
+import { asBool, asRecord, asStringList } from "./args";
+import { resolveAssetTarget } from "./assetCreateArgs";
 
 /** 当前项目根；未打开项目时抛错（各域命令共用） */
 function requireRoot(): string {
@@ -52,10 +54,20 @@ registerCommand({
   label: "编辑器状态",
   group: "编辑器",
   expose: true,
-  description: "获取编辑器当前状态（项目/场景/选中/视图）",
-  run: () => {
+  description: "获取编辑器当前状态（项目/场景/选中/视图；dirty 为后端权威值）",
+  run: async () => {
     const project = getProjectStore();
     const editor = getEditorStore();
+    // dirty 以后端会话为准：前端镜像靠 scene:changed 事件回填，紧跟 scene.save
+    // 时会滞后数百毫秒（外部脚本据此判断保存完成会误判）
+    let dirty = editor.state.dirty;
+    if (project.currentPath) {
+      try {
+        dirty = await sceneApi.dirty();
+      } catch {
+        // 后端暂不可用：保留前端镜像值
+      }
+    }
     return {
       project: project.currentPath
         ? { path: project.currentPath, name: project.projectName }
@@ -64,11 +76,13 @@ registerCommand({
       selection: editor.state.selectedId,
       selectionIds: editor.state.selectionIds,
       viewMode: editor.state.viewMode,
-      dirty: editor.state.dirty,
+      dirty,
       mounted: editor.state.mounted,
       rendererBackend: editor.engine.renderer.activeBackend,
       canUndo: editor.state.canUndo,
       canRedo: editor.state.canRedo,
+      historyPosition: editor.engine.history.position,
+      historyEntries: editor.engine.history.entries,
     };
   },
 });
@@ -138,12 +152,20 @@ registerCommand({
   label: "打开场景",
   group: "场景",
   expose: true,
-  description: "打开指定场景",
+  description:
+    "打开指定场景（返回 opened/dirty/reason；discard=true 放弃未保存修改并强制磁盘重装）",
   run: async (_ctx, args: Record<string, unknown>) => {
     const rel = String(args?.rel ?? "");
-    const ok = await getProjectStore().openScene(rel);
-    if (!ok) throw new Error(`打开场景失败: ${rel}`);
-    return { ok: true };
+    if (!rel) throw new Error("缺少 rel（场景相对路径，如 assets/Main.scene）");
+    const discard = asBool(args?.discard) ?? false;
+    const result = await getProjectStore().openScene(rel, discard);
+    if (!result) throw new Error(`打开场景失败: ${rel}`);
+    return {
+      ok: true,
+      opened: result.opened !== false,
+      dirty: result.dirty ?? false,
+      reason: result.reason ?? null,
+    };
   },
 });
 
@@ -166,9 +188,105 @@ registerCommand({
   group: "场景",
   expose: true,
   description: "获取当前场景的完整 JSON 文档",
-  run: () => {
+  run: async () => {
     requireRoot();
+    // 前端图写入是乐观应用 + 后端提交链：立刻读 Rust 会话可能落后于刚入链的
+    // add/remove/set（外部 Agent 常见「add 完立刻 tree」），先等写入链静默
+    await getEditorStore().engine.graph.quiesceWrites();
     return sceneApi.doc();
+  },
+});
+
+registerCommand({
+  id: "scene.settings.get",
+  label: "读取场景设置",
+  group: "场景",
+  expose: true,
+  description: "读取场景 settings（文档信封字段；未设置返回空对象）",
+  run: () => sceneApi.settings(),
+});
+
+registerCommand({
+  id: "scene.settings.patch",
+  label: "修改场景设置",
+  group: "场景",
+  expose: true,
+  description:
+    "深合并 patch 进场景 settings（只改给定字段，避免整份 scene.write；标脏随保存落盘，不入撤销历史）",
+  run: async (_ctx, args: Record<string, unknown>) => {
+    requireRoot();
+    const patch = asRecord(args?.patch ?? args?.settings);
+    if (!patch || !Object.keys(patch).length) {
+      throw new Error(
+        "缺少 patch（要深合并进 settings 的对象，如 {patch:{rendering:{backgroundColor:\"#112233\"}}}）",
+      );
+    }
+    const result = await sceneApi.settingsPatch(patch);
+    // 后端已把这次 patch 压入撤销栈：同步前端历史镜像（canUndo/entries）
+    const engine = getEditorStore().engine;
+    engine.history.update(await sceneApi.historyState());
+    return { ok: true, settings: result.settings, clamped: result.clamped };
+  },
+});
+
+/** 当前历史状态快照（撤销/重做命令返回与 editor.state 同形） */
+function historyStateOf(): Record<string, unknown> {
+  const h = getEditorStore().engine.history;
+  return {
+    canUndo: h.canUndo,
+    canRedo: h.canRedo,
+    depth: h.depth,
+    position: h.position,
+    entries: h.entries,
+    undoLabel: h.peekUndoLabel(),
+    redoLabel: h.peekRedoLabel(),
+    labels: h.listLabels(),
+  };
+}
+
+registerCommand({
+  id: "history.undo",
+  label: "撤销",
+  group: "编辑器",
+  expose: true,
+  description: "撤销上一步场景操作（含材质/settings；返回 {ok,undone,...历史状态,refreshedAssets}）",
+  run: async () => {
+    const engine = getEditorStore().engine;
+    const beforePosition = engine.history.position;
+    engine.undo();
+    await engine.graph.quiesceWrites();
+    // HistoryView.update 挂在 transport promise 的后续微任务上，让出一拍再读
+    await new Promise((r) => setTimeout(r, 0));
+    const undone = engine.history.position < beforePosition;
+    // 材质撤销由后端写回 .mat：立即失效缓存重读，并抑制文件监听的重复刷新
+    const assets = engine.history.takeAssets();
+    if (assets.length) {
+      for (const rel of assets) markAssetSelfWrite(rel);
+      await refreshProjectAssets(assets);
+    }
+    return { ok: true, undone, ...historyStateOf(), refreshedAssets: assets };
+  },
+});
+
+registerCommand({
+  id: "history.redo",
+  label: "重做",
+  group: "编辑器",
+  expose: true,
+  description: "重做被撤销的场景操作（含材质/settings；返回 {ok,redone,...历史状态,refreshedAssets}）",
+  run: async () => {
+    const engine = getEditorStore().engine;
+    const beforePosition = engine.history.position;
+    engine.redo();
+    await engine.graph.quiesceWrites();
+    await new Promise((r) => setTimeout(r, 0));
+    const redone = engine.history.position > beforePosition;
+    const assets = engine.history.takeAssets();
+    if (assets.length) {
+      for (const rel of assets) markAssetSelfWrite(rel);
+      await refreshProjectAssets(assets);
+    }
+    return { ok: true, redone, ...historyStateOf(), refreshedAssets: assets };
   },
 });
 
@@ -206,7 +324,30 @@ async function previewStartUrl(): Promise<string> {
   }
   const files = await buildPreviewFiles();
   await api.exportWebPreviewFromScene(root, project.sceneRel || DEFAULT_SCENE_REL, files);
-  return api.startWebPreviewServer(root);
+  const url = await api.startWebPreviewServer(root);
+  await waitPreviewReady();
+  return url;
+}
+
+/** 等待预览服务器真实可连（子进程 URL 先回、监听后起；200ms×30 ≈ 6s 上限） */
+async function waitPreviewReady(): Promise<void> {
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline) {
+    let status: Awaited<ReturnType<typeof api.previewStatus>> | null = null;
+    try {
+      status = await api.previewStatus();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // 非 Tauri 环境/旧后端没有该命令：跳过探测，按已返回的 url 处理
+      if (/preview_status|not found|unknown/i.test(msg)) return;
+    }
+    if (status) {
+      if (!status.running) throw new Error("预览服务器已退出（子进程启动失败或端口被占用）");
+      if (status.ready) return;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error("预览服务器未在预期时间内就绪（端口被占用或预览子进程启动失败）");
 }
 
 registerCommand({
@@ -214,7 +355,7 @@ registerCommand({
   label: "打开预览",
   group: "预览",
   expose: true,
-  description: "打开网页预览（导出并启动预览面板）",
+  description: "打开网页预览（导出并启动预览面板；返回的 url 已确认可连）",
   run: async () => {
     const url = await previewStartUrl();
     getEditorStore().setViewMode("preview");
@@ -239,8 +380,17 @@ registerCommand({
   label: "启动预览",
   group: "预览",
   expose: true,
-  description: "启动预览服务器（按现有导出产物）",
+  description: "启动预览服务器（按现有导出产物；返回的 url 已确认可连）",
   run: async () => ({ ok: true, url: await previewStartUrl() }),
+});
+
+registerCommand({
+  id: "preview.status",
+  label: "预览状态",
+  group: "预览",
+  expose: true,
+  description: "查询预览服务器状态（running/ready/url/port/dir；ready 为真实 TCP 探测）",
+  run: () => api.previewStatus(),
 });
 
 registerCommand({
@@ -260,8 +410,15 @@ registerCommand({
   label: "截图",
   group: "屏幕快照",
   expose: true,
-  description: "截取当前视口画面（返回 base64 PNG，并存入项目 .tmp/devtools/）",
-  run: async () => {
+  description:
+    "截取编辑器视口画面（source 仅支持 editor；返回 {source,blank,dataUrl,saved}，blank=true 表示画面为纯色；并存入项目 .tmp/devtools/）",
+  run: async (_ctx, args: Record<string, unknown>) => {
+    const requested = args?.source !== undefined ? String(args.source) : "editor";
+    if (requested !== "editor") {
+      throw new Error(
+        `不支持的截图来源: ${requested}（预览帧跨域不可读，当前仅支持 source="editor"）`,
+      );
+    }
     const engine = getEditorStore().engine;
     const source = engine.renderer.domElement as HTMLCanvasElement;
     if (!source || !source.width) throw new Error("编辑器视口尚未就绪");
@@ -273,6 +430,28 @@ registerCommand({
     ctx.drawImage(source, 0, 0);
     const dataUrl = canvas.toDataURL("image/png");
     if (dataUrl.length < 100) throw new Error("截帧失败（画布为空，视口可能未在渲染）");
+    // 空白帧判定：缩到 32×32 抽样，三通道全同 → blank（纯色场景也会 blank，
+    // 但与「渲染失败」不同：调用方可据此判断是否需要继续尝试而非当成有效画面）
+    let blank = false;
+    try {
+      const probe = document.createElement("canvas");
+      probe.width = 32;
+      probe.height = 32;
+      const pctx = probe.getContext("2d");
+      if (pctx) {
+        pctx.drawImage(canvas, 0, 0, 32, 32);
+        const px = pctx.getImageData(0, 0, 32, 32).data;
+        let min = 255;
+        let max = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          min = Math.min(min, px[i], px[i + 1], px[i + 2]);
+          max = Math.max(max, px[i], px[i + 1], px[i + 2]);
+        }
+        blank = max - min <= 1;
+      }
+    } catch {
+      // 读像素失败（跨域污染等）：不阻断截图，blank 保持 false
+    }
     let saved: string | null = null;
     const root = getProjectStore().currentPath;
     if (root) {
@@ -285,7 +464,7 @@ registerCommand({
         saved = null;
       }
     }
-    return { dataUrl, saved };
+    return { source: "editor", blank, dataUrl, saved };
   },
 });
 
@@ -301,6 +480,46 @@ registerCommand({
     const root = requireRoot();
     const assets = await api.scanAssets(root);
     return assets.map((a) => ({ name: a.name, path: a.path, kind: a.kind, size: a.size }));
+  },
+});
+
+registerCommand({
+  id: "asset.refresh",
+  label: "刷新资产",
+  group: "资源",
+  expose: true,
+  description:
+    "让编辑器重新读取磁盘上的资产并失效引擎缓存（path：相对路径或路径数组；缺省 = 全部已加载材质/着色器/模型/贴图）。.scene 不走本命令",
+  run: async (_ctx, args: Record<string, unknown>) => {
+    requireRoot();
+    const raw = args?.path ?? args?.paths ?? args?.rel;
+    let paths: string[] = [];
+    if (typeof raw === "string" && raw.trim()) {
+      paths = [raw.trim().replace(/\\/g, "/")];
+    } else if (Array.isArray(raw)) {
+      paths = raw.map((p) => String(p).trim().replace(/\\/g, "/")).filter(Boolean);
+    }
+    const engine = getEditorStore().engine;
+    if (!paths.length) {
+      // 缺省：全部已加载引用（贴图缓存键为 "c|rel"/"n|rel"，取后半段）
+      const textures = [...engine.textureCache.keys()]
+        .map((k) => k.slice(k.indexOf("|") + 1))
+        .filter(Boolean);
+      paths = [
+        ...new Set([
+          ...engine.materials.loadedRels(),
+          ...engine.shaders.loadedRels(),
+          ...engine.models.loadedRels(),
+          ...textures,
+        ]),
+      ];
+    }
+    const result = await refreshProjectAssets(paths);
+    if (!result.engineReady) throw new Error("编辑器引擎未就绪，无法刷新资产缓存");
+    // 全量刷新时兜底重刷所有网格材质（贴图引用方按新缓存重取）
+    if (!raw) engine.refreshMaterialNodes(null);
+    // path 只回仍在磁盘上的项；已删除的缓存引用单列在 pruned（不再算 skipped 错误）
+    return { ...result, path: paths.filter((p) => !result.pruned.includes(p)) };
   },
 });
 
@@ -327,8 +546,14 @@ registerCommand({
   run: async (_ctx, args: Record<string, unknown>) => {
     const root = requireRoot();
     const type = String(args?.type ?? "").toLowerCase();
-    const dir = typeof args?.dir === "string" ? args.dir.replace(/\/+$/, "") : "";
-    const stem = typeof args?.name === "string" && args.name.trim() ? args.name.trim() : null;
+    const resolved = resolveAssetTarget({
+      type,
+      dir: args?.dir,
+      name: args?.name,
+      path: args?.path,
+    });
+    if ("error" in resolved) throw new Error(resolved.error);
+    const { dir, stem } = resolved.target;
     const store = getAssetsStore();
     await store.load(root);
     const taken = new Set(store.assets.map((a) => a.path.toLowerCase()));
@@ -452,17 +677,44 @@ registerCommand({
   label: "删除资源",
   group: "资源",
   expose: true,
-  description: "删除资源文件或目录（path：项目相对路径）",
+  description:
+    "删除资源文件或目录（path：项目相对路径；返回 referencedBy = 仍引用该资产的场景节点数）",
   run: async (_ctx, args: Record<string, unknown>) => {
     const root = requireRoot();
-    const rel = String(args?.path ?? "");
+    const rel = String(args?.path ?? "").replace(/\\/g, "/");
     if (!rel) throw new Error("缺少 path（项目相对路径）");
+    // 存在性前置判定：缺失返回 NOT_FOUND 语义，而不是笼统的「删除失败」
+    const assets = await api.scanAssets(root);
+    const exists = assets.some((a) => a.path === rel || a.path.startsWith(`${rel}/`));
+    if (!exists) throw new Error(`资源不存在: ${rel}`);
+    // 引用统计：删材质/脚本/模型/贴图前告知仍有多少节点引用（不阻断，引用会回退默认）
+    const nodeRefs: string[] = [];
+    const editor = getEditorStore();
+    const engine = editor.engine;
+    if (editor.state.mounted && !engine.isDisposed()) {
+      const asDir = assets.some((a) => a.kind === "dir" && a.path === rel);
+      for (const node of engine.graph.all()) {
+        const text = JSON.stringify(node.toJSON());
+        const hit = text.includes(`"${rel}"`) || (asDir && text.includes(`"${rel}/`));
+        if (hit) nodeRefs.push(node.id);
+      }
+    }
+    const materialRefs = editor.state.mounted && !engine.isDisposed()
+      ? engine.materials
+          .loadedRels()
+          .filter((m) => JSON.stringify(engine.materials.paramsFor(m)).includes(rel))
+      : [];
     const isScript = (rel === "src" || rel.startsWith("src/")) && rel.endsWith(".ts");
     const ok = isScript
       ? await getScriptsStore().deleteScript(rel)
       : await getAssetsStore().remove(root, rel);
     if (!ok) throw new Error(`删除失败: ${rel}`);
-    return { deleted: rel };
+    return {
+      deleted: rel,
+      referencedBy: nodeRefs.length,
+      referencedNodes: nodeRefs.slice(0, 20),
+      referencedByMaterials: materialRefs,
+    };
   },
 });
 

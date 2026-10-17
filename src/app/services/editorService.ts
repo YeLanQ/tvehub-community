@@ -436,15 +436,19 @@ function collectRelsByExt(doc: JsonRecord, exts: readonly string[]): string[] {
  *  显式重开带 force：会话干净时从磁盘重装——asset.write 等外部直写场景文件后，
  *  project.open / scene.open 重开即见磁盘版本，不必退出再从项目管理进入；
  *  会话有未保存修改时后端脏保护复用内存版。 */
-export async function reloadEditorScene(root: string, rel: string): Promise<void> {
+export async function reloadEditorScene(
+  root: string,
+  rel: string,
+  discard = false,
+): Promise<SceneLoadResult | null> {
   const store = getEditorStore();
   const engine = store.engine;
-  if (!store.state.mounted || engine.isDisposed()) return;
+  if (!store.state.mounted || engine.isDisposed()) return null;
   const boot = getBootLoadingStore();
   try {
     boot.activate("scene");
-    const result = await sceneApi.open(root, rel, true);
-    if (engine.isDisposed()) return;
+    const result = await sceneApi.open(root, rel, true, discard);
+    if (engine.isDisposed()) return null;
     let ok = await applySceneLoadResult(engine, result);
     if (!ok && !engine.isDisposed()) {
       const fallback = await sceneApi.loadDoc(
@@ -455,12 +459,15 @@ export async function reloadEditorScene(root: string, rel: string): Promise<void
       if (!engine.isDisposed()) ok = await applySceneLoadResult(engine, fallback);
     }
     boot.complete("scene");
-    store.markSaved();
+    // 复用内存会话（未从磁盘重载）时保留未保存状态，不能 markSaved
+    if (result.opened !== false) store.markSaved();
     // 切换场景后回到场景编辑视图：若当前处于预览/脚本工作台，自动关闭（预览面板随之卸载并停服）
     if (store.state.viewMode !== "scene") store.setViewMode("scene");
     logStore.log("info", "场景已切换", "engine");
+    return result;
   } catch (e) {
     logStore.log("error", `打开场景失败: ${e}`, "engine");
+    return null;
   }
 }
 

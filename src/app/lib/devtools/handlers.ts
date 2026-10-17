@@ -4,6 +4,7 @@
 
 import { runCommand, hasCommand } from "../../commands";
 import { asRecord } from "../../commands/args";
+import { getEditorStore } from "../../stores/editor";
 import { enabledMcpTools, METHOD_TO_COMMAND } from "./state";
 
 /** 远程参数 → 命令参数规整（字段名差异集中在节点删除/命名） */
@@ -43,6 +44,64 @@ function sanitizeMcpName(method: string): string {
   return method.replace(/\./g, "_").toLowerCase();
 }
 
+/** devtools 协议级参数（Rust 自动开窗/工作区选择），不属于命令参数 */
+const PROTOCOL_ARGS = ["autoOpen", "root"];
+
+/**
+ * 固定参数方法的参数白名单（未知参数拒绝，避免拼错字段被静默忽略）。
+ * 字段包类方法（node.add/node.set/node.component.set/material.set）由命令自身校验。
+ */
+const STRICT_PARAMS: Record<string, string[]> = {
+  "editor.state": [],
+  "project.close": [],
+  "project.build": [
+    "scenes", "mainScene", "title", "debug", "singlePage", "gzip", "release",
+    "cdn", "gzipBase", "cdnBase", "outDir", "template",
+  ],
+  "scene.open": ["rel", "discard"],
+  "scene.save": ["rel", "path"],
+  "scene.tree": [],
+  "state.snapshot": [],
+  "state.restore": ["doc"],
+  "history.undo": [],
+  "history.redo": [],
+  "scene.settings.get": [],
+  "scene.settings.patch": ["patch", "settings"],
+  "preview.open": [],
+  "preview.start": [],
+  "preview.close": [],
+  "preview.stop": [],
+  "preview.status": [],
+  "preview.screenshot": ["source"],
+  "asset.create": ["type", "dir", "name", "path", "shaderKind", "skyKind"],
+  "asset.select": ["path"],
+  "asset.delete": ["path"],
+  "asset.rename": ["path", "newName"],
+  "asset.refresh": ["path", "paths", "rel"],
+  "material.get": ["path"],
+  "node.select": ["id"],
+  "node.remove": ["id", "ids"],
+  "node.rename": ["id", "name"],
+  "node.component.add": ["id", "type", "script", "rel", "path", "lightKind"],
+};
+
+/** 等待编辑器场景就绪（冷启动/自动开窗时命令可能早于场景装载到达） */
+async function waitEditorReady(): Promise<void> {
+  const store = getEditorStore();
+  const deadline = Date.now() + 8000;
+  while (!store.state.mounted) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        "场景尚未就绪（SCENE_NOT_READY）：编辑器仍在装载项目/场景，请稍后重试",
+      );
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (store.engine.isDisposed()) {
+    throw new Error("场景尚未就绪（SCENE_NOT_READY）：编辑器引擎已销毁");
+  }
+}
+
 /** 方法分派：method -> 命令执行。保留 mcp.listTools 与未知方法错误语义。 */
 export async function handleMethod(method: string, params: unknown): Promise<unknown> {
   if (method === "mcp.listTools") {
@@ -53,6 +112,18 @@ export async function handleMethod(method: string, params: unknown): Promise<unk
       description: t.description,
       inputSchema: { type: "object", properties: {} },
     }));
+  }
+  await waitEditorReady();
+  const strict = STRICT_PARAMS[method];
+  if (strict) {
+    const rec = asRecord(params) ?? {};
+    const allowed = new Set([...strict, ...PROTOCOL_ARGS]);
+    const unknown = Object.keys(rec).filter((k) => !allowed.has(k));
+    if (unknown.length) {
+      throw new Error(
+        `${method} 不支持参数: ${unknown.join("/")}（支持: ${[...allowed].join("/")}）`,
+      );
+    }
   }
   const cmdId = METHOD_TO_COMMAND[method];
   if (!cmdId || !hasCommand(cmdId)) {

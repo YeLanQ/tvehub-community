@@ -50,10 +50,17 @@ export interface MoveTarget {
 export interface SceneHistoryState {
   canUndo: boolean;
   canRedo: boolean;
+  /** 可撤销位置（undo 栈长度；undo 后减少） */
   depth: number;
+  /** 历史总条目数（undo + redo 两栈之和） */
+  entries?: number;
+  /** 与 depth 同义（显式命名） */
+  position?: number;
   undoLabel: string | null;
   redoLabel: string | null;
   labels: string[];
+  /** 本次 undo/redo 影响的资产相对路径（材质等；前端据此重读缓存） */
+  assets?: string[];
 }
 
 /** 后端 scene:changed 事件载荷 */
@@ -144,6 +151,14 @@ export class HistoryView {
   get depth(): number {
     return this.state.depth;
   }
+  /** 历史总条目数（undo + redo） */
+  get entries(): number {
+    return this.state.entries ?? this.state.depth;
+  }
+  /** 可撤销位置（与 depth 同义） */
+  get position(): number {
+    return this.state.position ?? this.state.depth;
+  }
   peekUndoLabel(): string | null {
     return this.state.undoLabel;
   }
@@ -152,6 +167,13 @@ export class HistoryView {
   }
   listLabels(): string[] {
     return [...this.state.labels];
+  }
+
+  /** 取出并清空本次 undo/redo 的受影响资产（避免下一次无操作时重复刷新） */
+  takeAssets(): string[] {
+    const assets = this.state.assets ?? [];
+    this.state.assets = [];
+    return assets;
   }
 }
 

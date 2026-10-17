@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import { api, type RecentProject } from "../../lib/api";
+import type { SceneLoadResult } from "../../lib/scene-api";
 import {
   DEFAULT_PHYSICS_BACKEND,
   isPhysicsBackendId,
@@ -93,8 +94,9 @@ export interface ProjectStore {
   ) => Promise<RecentProject | null>;
   pickFolder: () => Promise<string | null>;
   loadScene: (path: string, rel?: string) => Promise<void>;
-  /** 打开（切换）项目内任意 .scene 资产：加载文本 + 重载编辑器引擎场景 */
-  openScene: (rel: string) => Promise<boolean>;
+  /** 打开（切换）项目内任意 .scene 资产：加载文本 + 重载编辑器引擎场景。
+   *  discard=true 时放弃未保存修改、强制以磁盘版本重装。 */
+  openScene: (rel: string, discard?: boolean) => Promise<SceneLoadResult | null>;
 }
 
 let singleton: ProjectStore | null = null;
@@ -452,20 +454,20 @@ export function getProjectStore(): ProjectStore {
       // 场景内容由后端会话持有（scene_open 读盘/迁移/建图）；这里只记录当前场景指针
       state.currentSceneRel = rel;
     },
-    async openScene(rel) {
+    async openScene(rel, discard = false) {
       const root = state.currentPath;
-      if (!root) return false;
+      if (!root) return null;
       if (rel.startsWith("internal/") || rel === "src" || rel.startsWith("src/")) {
         console.warn("不能打开内置/脚本路径作为场景:", rel);
-        return false;
+        return null;
       }
       state.currentSceneRel = rel;
       // 编辑器已挂载：后端重装会话 + 镜像重建（层级/视口切换），无需重进编辑器
       if (state.view === "editor") {
         const { reloadEditorScene } = await import("../services/editorService");
-        await reloadEditorScene(root, rel);
+        return await reloadEditorScene(root, rel, discard);
       }
-      return true;
+      return null;
     },
   };
 

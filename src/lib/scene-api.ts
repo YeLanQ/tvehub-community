@@ -24,6 +24,12 @@ export interface SceneLoadResult {
   modelRefs: string[];
   revision: number;
   history: SceneHistoryState;
+  /** 是否真的从磁盘装载（false = 复用了已在内存中的会话） */
+  opened?: boolean;
+  /** 当前会话是否有未保存修改 */
+  dirty?: boolean;
+  /** 复用原因：already-open / already-open-dirty */
+  reason?: string | null;
 }
 
 /** 层级面板行（后端单次 DFS 计算：域过滤 + 搜索过滤，displayDepth 已按域压缩） */
@@ -64,16 +70,26 @@ export const sceneApi = {
   transport: (): SceneTransport => transport,
   /** 打开项目内 .scene 资产（后端读盘 + 旧格式迁移 + 建图；历史清零）。
    *  force：会话已存在且无未保存修改时强制从磁盘重装（asset.write 等外部直写后
-   *  重开场景即见磁盘版本）；有未保存修改由后端脏保护复用会话。 */
-  open: (root: string, rel: string, force = false) =>
-    invoke<SceneLoadResult>("scene_open", { root, rel, force }),
+   *  重开场景即见磁盘版本）；有未保存修改由后端脏保护复用会话。
+   *  discard：同时放弃未保存修改、强制以磁盘版本重装。 */
+  open: (root: string, rel: string, force = false, discard = false) =>
+    invoke<SceneLoadResult>("scene_open", { root, rel, force, discard }),
   /** 以前端构建的文档整树替换后端会话（初始场景/回退用；不落盘）；
    *  root/rel 提供时作为保存目标记录 */
   loadDoc: (doc: unknown, root?: string, rel?: string) =>
     invoke<SceneLoadResult>("scene_load_doc", { doc, root, rel }),
   /** 保存场景（后端序列化 + 写盘 + 清脏标记） */
   save: () => invoke<void>("scene_save"),
-  /** 提交场景物理设置（合并进 settings.physics；不入撤销历史，仅标脏随保存落盘） */
+  /** 读取场景 settings（文档信封字段，未设置返回空对象） */
+  settings: () => invoke<Record<string, unknown>>("scene_settings_get"),
+  /** 深合并 patch 进 settings（只改给定字段；标脏随保存落盘，入撤销历史） */
+  settingsPatch: (patch: Record<string, unknown>) =>
+    invoke<{ settings: Record<string, unknown>; clamped: string[] }>(
+      "scene_settings_patch",
+      { patch },
+    ),
+  /** 后端历史状态（外部命令 push 后同步前端镜像用） */
+  historyState: () => invoke<SceneHistoryState>("scene_history_state"),
   /** 读取当前会话的完整场景文档（devtools/状态快照用） */
   doc: () => invoke<unknown>("scene_doc"),
   /** 层级面板行查询（后端 DFS：view = scene|layout 域过滤 + 名称搜索；

@@ -9,6 +9,7 @@
 import "./editorCommands";
 import "./nodeCommands";
 import "./assetCommands";
+import "./materialCommands";
 import "./remoteCommands";
 
 export {

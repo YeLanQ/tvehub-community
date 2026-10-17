@@ -10,11 +10,11 @@ import { api } from "../../lib/api";
 import { registerCommand } from "./registry";
 import { asRecord, asStrings } from "./args";
 import { isEditingText } from "./context";
-import { currentTransform, mergeTransformSnapshot, parseNodeSetArgs } from "./nodeSet";
+import { coercePropsToNode, currentTransform, mergeTransformSnapshot, parseNodeSetArgs } from "./nodeSet";
 import type { MoveTarget, TransformSnapshot } from "../../framework/scene/SceneClient";
 import type { JsonRecord, Vec3 } from "../../framework/prototype/types";
 
-import type { GeometryKind } from "../../framework/mesh/geometry";
+import { GEOMETRY_KINDS } from "../../framework/mesh/geometry";
 import type { LightKind } from "../../framework/prototype/nodes/LightNode";
 import type { SkyboxKind } from "../../framework/prototype/nodes/SkyboxNode";
 import { FOG_KINDS } from "../../framework/fog/types";
@@ -28,9 +28,6 @@ import {
 } from "../lib/component-registry";
 import type { NodeComponentRef } from "../../framework/prototype/components";
 
-const GEOMETRY_KINDS: GeometryKind[] = [
-  "box", "sphere", "plane", "quad", "cylinder", "cone", "torus", "capsule",
-];
 const LIGHT_KINDS: LightKind[] = ["point", "directional", "ambient", "spot"];
 const SKYBOX_KINDS: SkyboxKind[] = ["cube", "procedural"];
 
@@ -46,9 +43,62 @@ function graph() {
   return getEditorStore().engine.graph;
 }
 
-/** 解析节点新增参数（未知类型回退安全默认，与历史 UI/devtools 语义一致） */
-function asSubtype<T extends string>(list: readonly T[], v: unknown, fallback: T): T {
-  return list.includes(v as T) ? (v as T) : fallback;
+/** 显式传入的枚举分支值必须合法：拼错不再静默退化成默认值 */
+function strictSubtype<T extends string>(
+  list: readonly T[],
+  v: unknown,
+  option: string,
+): T | undefined {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v === "string" && list.includes(v as T)) return v as T;
+  throw new Error(`${option} 非法: ${JSON.stringify(v)}（可选: ${list.join("/")}）`);
+}
+
+/** node.add 支持的顶层字段（未识别字段直接报错，不再静默丢弃） */
+const ADD_KEYS = new Set([
+  "kind", "type", "subtype", "geometry", "lightKind", "skyKind", "fogKind",
+  "parent", "parentId", "name", "position", "rotation", "scale", "size",
+  "material", "rel", "path", "scriptRel", "props", "autoOpen", "root",
+]);
+
+/** node.add 创建后应用变换/尺寸/材质等字段（走与 node.set 相同的收敛与撤销通道） */
+function applyAddExtras(
+  node: { id: string; transform: TransformSnapshot; toJSON: () => unknown },
+  args: Record<string, unknown>,
+): string[] {
+  const applied: string[] = [];
+  const patch: Record<string, unknown> = {};
+  for (const key of ["position", "rotation", "scale"] as const) {
+    if (args[key] !== undefined) patch[key] = args[key];
+  }
+  if (Object.keys(patch).length) {
+    const merged = mergeTransformSnapshot(currentTransform(
+      node.transform.position,
+      node.transform.rotation,
+      node.transform.scale,
+    ), patch);
+    if ("error" in merged) throw new Error(merged.error);
+    engine().setTransform(node.id, merged.snapshot);
+    applied.push(...Object.keys(patch));
+  }
+  const props: JsonRecord = {};
+  for (const key of ["size", "material"] as const) {
+    if (args[key] !== undefined) props[key] = args[key] as JsonRecord[string];
+  }
+  if (args.props !== undefined) {
+    const extra = asRecord(args.props);
+    if (!extra) throw new Error("props 应为对象（节点属性字段包）");
+    Object.assign(props, extra);
+  }
+  if (Object.keys(props).length) {
+    const coerced = coercePropsToNode(node, props);
+    if ("error" in coerced) throw new Error(coerced.error);
+    const before = node.toJSON() as JsonRecord;
+    const after = { ...before, ...coerced.props } as JsonRecord;
+    engine().patchNode(node.id, before, after, "开发者服务·添加节点属性");
+    applied.push(...Object.keys(coerced.props));
+  }
+  return applied;
 }
 
 /** node.add 可选 position（{x,y,z}，出生落位）；非法/缺省落世界原点 */
@@ -65,6 +115,13 @@ function asPosition(v: unknown): Vec3 | undefined {
 function asIdList(v: unknown): string[] {
   const list: unknown[] = Array.isArray(v) ? v : [v];
   return list.map((x) => String(x)).filter(Boolean);
+}
+
+/** 收集节点子树 id（含自身；删除返回值按真实级联范围上报） */
+function collectSubtreeIds(id: string, out: string[]): void {
+  if (!graph().has(id)) return;
+  out.push(id);
+  for (const child of graph().childrenOf(id)) collectSubtreeIds(child.id, out);
 }
 
 /** 任意 JSON → MoveTarget 列表（剔除缺 id / 父级非法的残缺项——原 engine 端
@@ -114,74 +171,106 @@ registerCommand({
   run: async (_ctx, args: Record<string, unknown>) => {
     const st = editor();
     if (!st.state.mounted) throw new Error("编辑器未就绪，无法添加节点");
+    for (const key of Object.keys(args ?? {})) {
+      if (!ADD_KEYS.has(key)) {
+        throw new Error(
+          `node.add 不支持字段: ${key}（支持: ${[...ADD_KEYS].join("/")}；其余节点属性放 props）`,
+        );
+      }
+    }
     // parent 别名：模型常写 parent（值可为节点 id 或 "root"），与 parentId 等价
     const parentRaw = args?.parentId ?? args?.parent;
     const parentId = parentRaw ? String(parentRaw) : undefined;
     const kind = String(args?.kind ?? args?.type ?? "group").toLowerCase();
     const subtype = args?.subtype !== undefined ? String(args.subtype) : undefined;
+    // 枚举分支拼错直接报错（此前静默退化成默认值）
+    if (kind !== "mesh" && kind !== "meshnode" && args?.geometry !== undefined) {
+      throw new Error("geometry 仅 mesh 节点支持（其它类型用 subtype）");
+    }
+    if (kind !== "light" && kind !== "lightnode" && args?.lightKind !== undefined) {
+      throw new Error("lightKind 仅 light 节点支持");
+    }
+    if (kind !== "skybox" && kind !== "skyboxnode" && args?.skyKind !== undefined) {
+      throw new Error("skyKind 仅 skybox 节点支持");
+    }
+    if (kind !== "fog" && kind !== "fognode" && args?.fogKind !== undefined) {
+      throw new Error("fogKind 仅 fog 节点支持");
+    }
+    if (typeof args?.material === "string" && !/\.mat$/i.test(args.material.trim())) {
+      throw new Error(`material 需要 .mat 资产相对路径，收到: ${args.material}`);
+    }
+    // 名字在创建时传入（factory 的 name 选项）：避免「add + rename」两条历史
+    const name = args?.name ? String(args.name).trim() : "";
     let node;
     switch (kind) {
       case "group":
       case "node":
-        node = engine().addEmptyGroup(parentId);
+        node = engine().addEmptyGroup(parentId, name);
         break;
       case "mesh":
       case "meshnode":
         // subtype=data → 数据化网格节点（source=data，载荷经检查器导入）
         // position：出生落位（{x,y,z}，缺省回退引擎默认出生偏移）
         node = subtype === "data"
-          ? engine().addDataMesh(parentId, asPosition(args?.position))
+          ? engine().addDataMesh(parentId, asPosition(args?.position), name)
           : engine().addMesh(
-              asSubtype(GEOMETRY_KINDS, subtype ?? args?.geometry, "box"),
+              strictSubtype(GEOMETRY_KINDS, subtype ?? args?.geometry, "geometry") ?? "box",
               parentId,
               asPosition(args?.position),
+              name,
             );
         break;
       case "light":
       case "lightnode":
         node = engine().addLight(
-          asSubtype(LIGHT_KINDS, subtype ?? args?.lightKind, "point"),
+          strictSubtype(LIGHT_KINDS, subtype ?? args?.lightKind, "lightKind") ?? "point",
           parentId,
+          name,
         );
         break;
       case "camera":
       case "cameranode":
-        node = engine().addCamera(parentId);
+        node = engine().addCamera(parentId, name);
         break;
       case "skybox":
       case "skyboxnode":
         node = engine().addSkybox(
-          asSubtype(SKYBOX_KINDS, subtype ?? args?.skyKind, "procedural"),
+          strictSubtype(SKYBOX_KINDS, subtype ?? args?.skyKind, "skyKind") ?? "procedural",
           parentId,
+          name,
         );
         break;
       case "fog":
       case "fognode":
         node = engine().addFog(
-          asSubtype(FOG_KINDS, subtype ?? args?.fogKind, "linear"),
+          strictSubtype(FOG_KINDS, subtype ?? args?.fogKind, "fogKind") ?? "linear",
           parentId,
+          name,
         );
         break;
       case "audio":
       case "audionode": {
         // 可选 path：直接绑定音频资产（资产面板「添加到场景」）
         const audioSrc = args?.path ?? args?.rel;
-        node = engine().addAudio(parentId, audioSrc !== undefined && audioSrc !== null ? String(audioSrc) : "");
+        node = engine().addAudio(parentId, audioSrc !== undefined && audioSrc !== null ? String(audioSrc) : "", name);
         break;
       }
       case "particle":
       case "particles":
       case "particlesystem":
       case "particlesystemnode":
-        node = engine().addParticleSystem(parentId);
+        node = engine().addParticleSystem(parentId, name);
         break;
       case "nav":
       case "navarea":
       case "navagent": {
         // nav:<area|agent>（裸 "nav" = 区域）；导航区域覆盖范围自动取所采样地形
         const navKind = kind === "nav" ? (subtype ?? "area") : kind === "navarea" ? "area" : "agent";
-        if (navKind === "agent") node = engine().addNavAgent(parentId);
-        else node = engine().addNavArea(parentId);
+        if (navKind !== "area" && navKind !== "agent") {
+          throw new Error(`未知导航类型: ${navKind}（应为 area/agent）`);
+        }
+        if (navKind === "agent") node = engine().addNavAgent(parentId, name);
+        else node = engine().addNavArea(parentId, name);
         break;
       }
       case "logic":
@@ -195,8 +284,8 @@ registerCommand({
           : kind.startsWith("fsm")
             ? "fsm"
             : "bt";
-        if (logicKind === "bt") node = engine().addBtRunner(parentId);
-        else if (logicKind === "fsm") node = engine().addFsmRunner(parentId);
+        if (logicKind === "bt") node = engine().addBtRunner(parentId, name);
+        else if (logicKind === "fsm") node = engine().addFsmRunner(parentId, name);
         else throw new Error(`未知逻辑运行器类型: logic:${logicKind}（应为 fsm/bt）`);
         break;
       }
@@ -214,12 +303,16 @@ registerCommand({
           if (!root) throw new Error("未打开项目，无法读取地形资产");
           const text = await api.readText(root, terrainPath);
           const doc = JSON.parse(text) as { settings?: unknown };
-          node = engine().addTerrain(parentId, {
-            asset: terrainPath,
-            terrain: parseTerrainSettings(doc.settings),
-          });
+          node = engine().addTerrain(
+            parentId,
+            {
+              asset: terrainPath,
+              terrain: parseTerrainSettings(doc.settings),
+            },
+            name,
+          );
         } else {
-          node = engine().addTerrain(parentId);
+          node = engine().addTerrain(parentId, undefined, name);
         }
         break;
       }
@@ -239,23 +332,27 @@ registerCommand({
             let h = Math.max(1, Math.round(ps.designHeight));
             if (ps.orientation === "portrait" && w > h) [w, h] = [h, w];
             if (ps.orientation === "landscape" && h > w) [w, h] = [h, w];
-            node = engine().addUICanvas(parentId, {
-              designWidth: w,
-              designHeight: h,
-            });
+            node = engine().addUICanvas(
+              parentId,
+              {
+                designWidth: w,
+                designHeight: h,
+              },
+              name,
+            );
             break;
           }
           case "text":
-            node = engine().addUIText(parentId);
+            node = engine().addUIText(parentId, name);
             break;
           case "image":
-            node = engine().addUIImage(parentId);
+            node = engine().addUIImage(parentId, name);
             break;
           case "button":
-            node = engine().addUIButton(parentId);
+            node = engine().addUIButton(parentId, name);
             break;
           case "layout":
-            node = engine().addUILayout(parentId);
+            node = engine().addUILayout(parentId, name);
             break;
           default:
             throw new Error(`未知 UI 节点类型: ui:${uiKind}（应为 canvas/text/image/button/layout）`);
@@ -271,14 +368,14 @@ registerCommand({
             "脚本节点缺少脚本路径：用 rel（或 path/scriptRel/subtype）= 如 src/Player.ts 的 .ts 资产相对路径",
           );
         const nt = getScriptsStore().scriptNodeTypes().find((s) => s.rel === rel);
-        node = engine().addScriptNode(String(rel), nt?.nodeType ?? { kind: "node" }, parentId);
+        node = engine().addScriptNode(String(rel), nt?.nodeType ?? { kind: "node" }, parentId, name);
         break;
       }
       case "model": {
         const rel = args?.path ?? args?.rel;
         if (!rel)
           throw new Error("模型节点缺少资产路径：用 path（或 rel）= 模型资产相对路径（.glb/.gltf）");
-        node = engine().addModel(String(rel), parentId, asPosition(args?.position));
+        node = engine().addModel(String(rel), parentId, asPosition(args?.position), name);
         break;
       }
       default:
@@ -286,10 +383,11 @@ registerCommand({
           `未知节点类型: ${kind}（应为 group/mesh/light/camera/skybox/fog/audio/particle/terrain/nav/logic/script/model）`,
         );
     }
-    // 显式命名：仅在提供了非空 name 时重命名（未提供保持引擎默认名，与历史 UI 一致）
-    const name = args?.name ? String(args.name).trim() : "";
-    if (name && node.name !== name) graph().rename(node.id, name);
-    return { id: node.id, name: node.name, type: kind };
+    const applied: string[] = [];
+    if (name) applied.push("name");
+    // 创建即落位/尺寸/材质：此前这些字段被静默丢弃（外部 Agent 只能两段式再写）
+    applied.push(...applyAddExtras(node, args ?? {}));
+    return { id: node.id, name: node.name, type: kind, applied };
   },
 });
 
@@ -382,10 +480,13 @@ registerCommand({
     }
     if (!targets.length) {
       console.warn("根场景节点不可删除");
-      return { deleted: [] };
+      return { deleted: [], roots: [] };
     }
+    // 真实级联范围：删除父级会连同子孙一起消失，返回值完整列给调用方
+    const removed: string[] = [];
+    for (const id of targets) collectSubtreeIds(id, removed);
     engine().deleteNodes(targets);
-    return { deleted: targets };
+    return { deleted: removed, roots: targets };
   },
 });
 
@@ -526,13 +627,17 @@ registerCommand({
       set.push("transform");
     }
     if (props) {
+      // 属性命令通道的值域收敛：未知属性/非法 geometry/非正 size 报错自纠，
+      // 值按节点实例字段类型归一（与 node.add 的 props 走同一校验）
+      const coerced = coercePropsToNode(node, props);
+      if ("error" in coerced) throw new Error(coerced.error);
       const before = node.toJSON() as JsonRecord;
       const after = {
         ...(before as unknown as Record<string, unknown>),
-        ...props,
+        ...coerced.props,
       } as unknown as JsonRecord;
       engine().patchNode(id, before, after, "开发者服务·设置节点");
-      set.push(...Object.keys(props));
+      set.push(...Object.keys(coerced.props));
     }
     return { ok: true, id, set };
   },

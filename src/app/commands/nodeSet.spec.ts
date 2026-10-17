@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { type TransformSnapshot } from "../../framework/scene/SceneClient";
-import { currentTransform, mergeTransformSnapshot, parseNodeSetArgs, type NodeSetPatch } from "./nodeSet";
+import type { JsonRecord } from "../../framework/prototype/types";
+import {
+  coerceByShape,
+  coercePropsToNode,
+  currentTransform,
+  mergeTransformSnapshot,
+  parseNodeSetArgs,
+  type NodeSetPatch,
+} from "./nodeSet";
+import { PointLightNode } from "../../framework/prototype/nodes/PointLightNode";
+import { MeshNode } from "../../framework/prototype/nodes/MeshNode";
+import { Node } from "../../framework/prototype/Node";
 
 /** 断言解析成功并返回补丁（失败即测试失败） */
 function parsed(args: unknown): NodeSetPatch {
@@ -34,6 +45,11 @@ describe("parseNodeSetArgs", () => {
   it("正常：prop/value 单属性形式（历史契约）", () => {
     expect(parsed({ id: "a", prop: "visible", value: false }).props).toEqual({ visible: false });
     expect(parsed({ id: "a", prop: "visible", value: false }).name).toBeUndefined();
+  });
+
+  it("协议级参数 autoOpen/root 不当作节点属性", () => {
+    const patch = parsed({ id: "a", autoOpen: false, root: "D:/P", visible: true });
+    expect(patch.props).toEqual({ visible: true });
   });
 
   it("正常：字段包形式 name+transform+visible 混写分类正确", () => {
@@ -122,5 +138,95 @@ describe("mergeTransformSnapshot", () => {
     expect(mergeError(base, { scale: { x: "big" } })).toContain("scale.x");
     expect(mergeError(base, { foo: { x: 1 } })).toContain("foo");
     expect(mergeError(base, { position: { w: 1 } })).toContain("position");
+  });
+});
+
+describe("coercePropsToNode（属性命令通道值域收敛）", () => {
+  // 2026-10-12 事故回放：助手把 intensity 写成 "0.5" 字符串落进节点 JSON，
+  // 编辑器 JS 隐式转换看不出异常，播放运行时严格 typeof 识别不到回落默认，
+  // 预览/导出光照阴影异常。所有经 node.set 的补丁值必须按实例字段类型归一。
+  const light = new PointLightNode({ name: "L", castShadow: true });
+
+  /** 断言收敛失败并返回错误文案 */
+  function coerceError(out: { error: string } | { value: unknown } | { props: JsonRecord }): string {
+    if (!("error" in out)) throw new Error("应收敛失败");
+    return out.error;
+  }
+
+  it("正常：数字字符串按字段类型转数值（intensity/distance/shadow.radius）", () => {
+    const out = coercePropsToNode(light, { intensity: "0.5", distance: "8" });
+    if ("error" in out) throw new Error(`应收敛成功: ${out.error}`);
+    expect(out.props).toEqual({ intensity: 0.5, distance: 8 });
+    // 嵌套配置对象逐键下钻同样收敛
+    const sh = coerceByShape(light.shadow, { radius: "1", strength: "0.8" }, "shadow");
+    if ("error" in sh) throw new Error(`应收敛成功: ${sh.error}`);
+    expect(sh.value).toEqual({ radius: 1, strength: 0.8 });
+  });
+
+  it("正常：布尔字段认 \"true\"/\"false\"/1/0（castShadow 字符串不再漏进 JSON）", () => {
+    const out = coercePropsToNode(light, { castShadow: "true" });
+    if ("error" in out) throw new Error(`应收敛成功: ${out.error}`);
+    expect(out.props).toEqual({ castShadow: true });
+    const off = coercePropsToNode(light, { castShadow: "false" });
+    if ("error" in off) throw new Error(`应收敛成功: ${off.error}`);
+    expect(off.props).toEqual({ castShadow: false });
+    expect(coerceByShape(true, 1, "x")).toEqual({ value: true });
+    expect(coerceByShape(false, 0, "x")).toEqual({ value: false });
+  });
+
+  it("边界：properties 自由属性表放行；形状外的新键原样透传交解析层取舍", () => {
+    const n = new Node({ name: "N" });
+    const out = coercePropsToNode(n, { properties: { hp: "100", note: "x" } });
+    if ("error" in out) throw new Error(`应收敛成功: ${out.error}`);
+    expect(out.props).toEqual({ properties: { hp: "100", note: "x" } });
+    const sh = coerceByShape(light.shadow, { custom: "v" }, "shadow");
+    if ("error" in sh) throw new Error(`应收敛成功: ${sh.error}`);
+    expect(sh.value).toEqual({ custom: "v" });
+  });
+
+  it("异常：未知属性 / 组件列表 / 只读字段报错自纠，不静默落盘", () => {
+    expect(coerceError(coercePropsToNode(light, { shadows: true }))).toContain("节点无属性");
+    expect(coerceError(coercePropsToNode(light, { components: [] }))).toContain("node.component");
+    expect(coerceError(coercePropsToNode(light, { typeKey: "x" }))).toContain("只读");
+    expect(coerceError(coercePropsToNode(light, { isRoot: true }))).toContain("只读");
+  });
+
+  it("异常：类型不兼容报错指明字段（数值字段收非数 / 布尔字段收任意串）", () => {
+    expect(coerceError(coercePropsToNode(light, { intensity: "bright" }))).toContain("intensity");
+    expect(coerceError(coercePropsToNode(light, { castShadow: "yes" }))).toContain("castShadow");
+    expect(coerceError(coerceByShape(light.shadow, 3, "shadow"))).toContain("对象");
+  });
+
+  it("异常：size 零/负数拒绝写入；合法 size 收敛为数值", () => {
+    const mesh = new MeshNode({ name: "M" });
+    const zero = coerceError(coercePropsToNode(mesh, { size: { x: 0, y: 1, z: 1 } }));
+    expect(zero).toContain("size.x");
+    const negative = coerceError(coercePropsToNode(mesh, { size: { x: -5, y: 1, z: 1 } }));
+    expect(negative).toContain("正数");
+    const ok = coercePropsToNode(mesh, { size: { x: "2", y: 1, z: 0.5 } });
+    if ("error" in ok) throw new Error(`应收敛成功: ${ok.error}`);
+    expect(ok.props).toEqual({ size: { x: 2, y: 1, z: 0.5 } });
+  });
+
+  it("异常：geometry 非法值拒绝写入（不再静默落进场景文件）", () => {
+    const mesh = new MeshNode({ name: "M" });
+    const bad = coerceError(coercePropsToNode(mesh, { geometry: "nope" }));
+    expect(bad).toContain("geometry 非法");
+    expect(bad).toContain("box");
+    const ok = coercePropsToNode(mesh, { geometry: "Sphere" });
+    if ("error" in ok) throw new Error(`应收敛成功: ${ok.error}`);
+    expect(ok.props).toEqual({ geometry: "sphere" });
+  });
+
+  it("异常：material 只接受 .mat 路径；未知属性回传可写属性清单", () => {
+    const mesh = new MeshNode({ name: "M" });
+    expect(coerceError(coercePropsToNode(mesh, { material: "Wall.json" }))).toContain(".mat");
+    const ok = coercePropsToNode(mesh, { material: "assets/Materials/Red.mat" });
+    if ("error" in ok) throw new Error(`应收敛成功: ${ok.error}`);
+    expect(ok.props).toEqual({ material: "assets/Materials/Red.mat" });
+    const unknown = coerceError(coercePropsToNode(mesh, { bogusKey: 1 }));
+    expect(unknown).toContain("节点无属性: bogusKey");
+    expect(unknown).toContain("可设:");
+    expect(unknown).toContain("material");
   });
 });

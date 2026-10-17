@@ -3,13 +3,18 @@
 //! 启用后监听 `127.0.0.1:{port}`，外部工具（脚本 / 集成 / 自动化）用换行分隔的 JSON
 //! 与编辑器交互：
 //! - 请求：`{"id":<任意值>,"method":"<字符串>","params":{...}}`
-//! - 响应：`{"id":<同上>,"result":<值>,"error":<字符串|null>}`
-//! - 推送（无 id）：`{"event":"<名称>","data":<值>}`
+//! - 响应：`{"id":<同上>,"result":<值>,"error":<字符串|null>,"code":<错误码>}`
+//! - 推送（无 id）：`{"event":"<名称>","data":<值>}` —— **默认不推**，客户端显式
+//!   `devtools.subscribe {events:true}` 后才接收（裸客户端因此只会看到自己的响应）
+//! - 自描述：先 `devtools.hello`（身份/端口/活跃会话）与 `devtools.catalog`
+//!   （命令集：名称/路由/权限），无需任何客户端库
+//! - 无编辑器兜底：需要编辑器的方法（`route:"editor"`）在无会话时由服务端自动
+//!   打开项目后执行；`params.autoOpen:false` 可关闭
 //!
 //! 同一端口自动探测 HTTP 请求（POST /mcp），内联提供 MCP streamable-http 端点。
 //!
 //! 方法分两类：
-//! - **Rust 本地**：`ping` / `editor.health`，直接在服务端应答。
+//! - **Rust 本地**：`ping` / `editor.health` / `devtools.*` / 项目与文件查询，直接应答。
 //! - **前端执行**：其余方法转发为 Tauri 事件 `devtools:cmd`，由编辑器窗口的
 //!   前端执行器（src/app/lib/devtools）调用 store / engine / api，再经
 //!   `devtools_reply` 回填。每笔待回复命令由服务端生成唯一 `replyToken`（UUID），
@@ -122,7 +127,10 @@ pub struct DevToolsRuntime {
     port: u16,
     token: String,
     /// 所有客户端连接（用于事件广播，仅 JSON-lines 客户端）
-    clients: Mutex<Vec<SyncSender<String>>>,
+    /// 订阅了事件广播的连接（id 用于断开/退订时精确移除；SyncSender 无同一通道判定）
+    clients: Mutex<Vec<(u64, SyncSender<String>)>>,
+    /// 连接 id 自增源
+    next_client_id: std::sync::atomic::AtomicU64,
     /// replyToken -> (连接发送端, 原请求 id)
     pending: Mutex<HashMap<String, PendingResp>>,
     /// replyToken -> MCP HTTP 请求的回复通道（前端回填后构造成 HTTP 响应）
@@ -204,9 +212,16 @@ const METHOD_TO_TOOL: &[(&str, &str)] = &[
     ("preview.screenshot", "screenScreenshot"),
     ("state.snapshot", "state"),
     ("state.restore", "state"),
+    ("history.undo", "state"),
+    ("history.redo", "state"),
+    ("scene.settings.get", "scene"),
+    ("scene.settings.patch", "scene"),
     ("asset.list", "assetList"),
     ("asset.read", "assetRead"),
     ("asset.write", "assetWrite"),
+    ("asset.refresh", "assetList"),
+    ("material.get", "assetRead"),
+    ("material.set", "assetWrite"),
     ("asset.create", "assetCreate"),
     ("asset.select", "assetSelect"),
     ("asset.delete", "assetDelete"),
@@ -220,8 +235,558 @@ fn tool_name(id: &str) -> Option<String> {
         .map(|(_, name, _)| name.to_string())
 }
 
+/// 需要活跃编辑器窗口的方法（自描述与自动开窗用；与执行路径无关——
+/// scene.tree/save 由 Rust 本地直答，但同样依赖编辑器会话）。
+const EDITOR_METHODS: &[&str] = &[
+    "editor.state",
+    "project.close",
+    "project.build",
+    "scene.open",
+    "scene.save",
+    "scene.tree",
+    "node.select",
+    "node.add",
+    "node.remove",
+    "node.rename",
+    "node.set",
+    "node.component.add",
+    "node.component.set",
+    "preview.open",
+    "preview.close",
+    "preview.start",
+    "preview.stop",
+    "preview.status",
+    "preview.screenshot",
+    "state.snapshot",
+    "state.restore",
+    "history.undo",
+    "history.redo",
+    "scene.settings.get",
+    "scene.settings.patch",
+    "asset.create",
+    "asset.select",
+    "asset.delete",
+    "asset.rename",
+    "asset.refresh",
+    "material.get",
+    "material.set",
+];
+
+/// 需要编辑器但不应触发自动开窗的方法（"关闭/停止"类没有可操作对象，
+/// 为它们弹一个窗口只会在下一秒再关掉）。
+const NO_AUTO_OPEN: &[&str] = &["project.close", "preview.close", "preview.stop"];
+
+/// 无需编辑器即可应答的方法（握手/项目查询/文件读写/协议自省）。
+const LOCAL_METHODS: &[&str] = &[
+    "devtools.hello",
+    "devtools.tools",
+    "devtools.catalog",
+    "devtools.subscribe",
+    "ping",
+    "editor.health",
+    "project.list",
+    "project.create",
+    "project.open",
+    "scene.list",
+    "scene.write",
+    "shader.write",
+    "asset.list",
+    "asset.read",
+    "asset.write",
+    "file.index",
+    "file.search",
+    "file.module",
+];
+
+/// 命令集自描述：名称 + 路由（local/editor）+ 权限 id + 当前是否启用。
+/// 外部 Agent 不必依赖任何客户端程序，连上后先读这里即可编程化调用。
+/// verbose=true 时附带常用方法的参数 schema 与示例（params 字段），
+/// 避免只能靠「发空对象读 BAD_PARAMS」反推参数。
+/// 能力指纹：方法集 + 参数 schema 的稳定哈希。热更新时 appVersion 不变，
+/// 客户端可据此探测能力变化（新增/删除方法或改 schema 都会变）。
+fn catalog_fingerprint() -> String {
+    let mut canonical = String::new();
+    for name in LOCAL_METHODS.iter().chain(EDITOR_METHODS.iter()) {
+        canonical.push_str(name);
+        canonical.push('\n');
+        if let Some(spec) = param_spec(name) {
+            canonical.push_str(&spec.to_string());
+        }
+        canonical.push('\n');
+    }
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in canonical.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn catalog_response(app: &AppHandle, verbose: bool) -> serde_json::Value {
+    let perms: HashMap<String, bool> = current_tools(app)
+        .into_iter()
+        .map(|t| (t.id, t.enabled))
+        .collect();
+    let mut commands = Vec::new();
+    for (names, route) in [(LOCAL_METHODS, "local"), (EDITOR_METHODS, "editor")] {
+        for name in names {
+            let permission = METHOD_TO_TOOL
+                .iter()
+                .find(|(m, _)| m == name)
+                .map(|(_, t)| *t);
+            let mut cmd = serde_json::json!({
+                "name": name,
+                "route": route,
+                "permission": permission,
+                "enabled": permission
+                    .and_then(|p| perms.get(p).copied())
+                    .unwrap_or(true),
+            });
+            if verbose {
+                if let Some(spec) = param_spec(name) {
+                    cmd["params"] = spec;
+                }
+            }
+            commands.push(cmd);
+        }
+    }
+    serde_json::json!({
+        "protocolVersion": 1,
+        "capabilitiesRevision": catalog_fingerprint(),
+        "transport": "tcp-jsonlines",
+        "verbose": verbose,
+        "protocolParams": {
+            "autoOpen": { "type": "boolean", "description": "requires-editor 方法无会话时自动打开项目（默认 true）" },
+            "root": { "type": "string", "description": "自动开窗时优先使用的工作区项目根" },
+        },
+        "envelope": {
+            "request": { "id": "any", "method": "string", "params": "object" },
+            "response": { "id": "any", "result": "any", "error": "string|null", "code": "string" },
+            "event": { "event": "string", "data": "any" },
+        },
+        "events": { "subscribe": "devtools.subscribe", "param": { "events": "boolean" }, "default": false },
+        "autoOpenEditor": { "default": true, "optOut": { "autoOpen": false } },
+        "commands": commands,
+    })
+}
+
+/// 无参数命令的显式 schema（与「没有文档」区分：properties 为空对象）
+fn no_params(desc: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {},
+        "description": desc,
+    })
+}
+
+/// 全部命令的参数 schema（JSON Schema 子集 + examples）。
+/// 每个 catalog 方法都必须在这里有登记（单测按 LOCAL/EDITOR 列表逐条校验），
+/// 无参数命令用 no_params 显式声明，客户端不会再遇到「空 schema = 不知道」。
+fn param_spec(method: &str) -> Option<serde_json::Value> {
+    param_spec_protocol(method)
+        .or_else(|| param_spec_scene(method))
+        .or_else(|| param_spec_nodes(method))
+        .or_else(|| param_spec_preview_assets(method))
+}
+
+fn param_spec_protocol(method: &str) -> Option<serde_json::Value> {
+    let spec = match method {
+        "devtools.hello" | "devtools.tools" | "ping" | "editor.health" => {
+            no_params("无参数")
+        }
+        "devtools.catalog" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "verbose": { "type": "boolean", "description": "true = 附带全部命令的参数 schema 与示例" },
+            },
+            "examples": [{ "verbose": true }],
+        }),
+        "devtools.subscribe" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "events": { "type": "boolean", "description": "true 订阅事件流（默认不推）" },
+            },
+            "required": ["events"],
+            "examples": [{ "events": true }],
+        }),
+
+        "file.index" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "工作区相对文件路径" },
+                "root": { "type": "string" },
+            },
+            "required": ["path"],
+        }),
+        "file.search" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "工作区相对文件路径" },
+                "query": { "type": "string" },
+                "topK": { "type": "integer", "description": "返回条数上限（缺省 0 = 不限）" },
+                "root": { "type": "string" },
+            },
+            "required": ["path", "query"],
+        }),
+        "file.module" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "工作区相对文件路径" },
+                "title": { "type": "string", "description": "模块标题（与 no 二选一）" },
+                "no": { "type": "integer", "description": "模块序号（从 0 起）" },
+                "root": { "type": "string" },
+            },
+            "required": ["path"],
+            "examples": [{ "path": "docs/notes/agent-loop/01.md", "no": 0 }],
+        }),
+        _ => return None,
+    };
+    Some(spec)
+}
+
+fn param_spec_scene(method: &str) -> Option<serde_json::Value> {
+    let spec = match method {
+        "project.list" => no_params("无参数：返回最近项目列表"),
+        "project.create" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string", "description": "项目名（同时作为目录名）" },
+                "parent": { "type": "string", "description": "父目录绝对路径；缺省用首页设置的项目位置" },
+            },
+            "required": ["name"],
+            "examples": [{ "name": "MyScene", "parent": "D:/Projects" }],
+        }),
+        "project.open" => serde_json::json!({
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "项目根目录绝对路径" } },
+            "required": ["path"],
+            "examples": [{ "path": "D:/Projects/MyScene" }],
+        }),
+        "project.close" => no_params("无参数：关闭当前项目并回首页"),
+        "project.build" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "scenes": { "description": "场景 rel 数组（或逗号分隔字符串）；缺省用构建配置", "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "string" }] },
+                "mainScene": { "type": "string", "description": "主场景 rel" },
+                "title": { "type": "string" },
+                "debug": { "type": "boolean" },
+                "singlePage": { "type": "boolean", "description": "单页产物（默认 false = 多页）" },
+                "gzip": { "type": "boolean" },
+                "release": { "type": "boolean" },
+                "cdn": { "type": "boolean" },
+                "gzipBase": { "type": "string" },
+                "cdnBase": { "type": "string" },
+                "outDir": { "type": "string", "description": "输出目录（项目相对；缺省 build/web）" },
+                "template": { "type": "string", "description": "导出模板 id" },
+            },
+            "examples": [{ "singlePage": true, "outDir": "build/preview-check" }],
+        }),
+        "scene.list" => serde_json::json!({
+            "type": "object",
+            "properties": { "root": { "type": "string", "description": "项目根（缺省当前编辑器项目）" } },
+        }),
+        "scene.open" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "rel": { "type": "string", "description": "场景资产相对路径（如 assets/Main.scene）" },
+                "discard": { "type": "boolean", "description": "true = 放弃未保存修改并以磁盘版本强制重装" },
+            },
+            "required": ["rel"],
+            "examples": [{ "rel": "assets/Main.scene" }, { "rel": "assets/Main.scene", "discard": true }],
+        }),
+        "scene.save" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "rel": { "type": "string", "description": "【已弃用，忽略】保存目标固定为当前打开场景" },
+                "path": { "type": "string", "description": "【已弃用，忽略】同上" },
+            },
+            "description": "同步落盘，返回 {ok,flushed:true,dirty:false,revision}；rel/path 仅为兼容旧脚本接受并忽略",
+            "examples": [{}],
+        }),
+        "scene.tree" | "state.snapshot" => no_params("无参数：返回完整场景文档"),
+        "scene.write" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "rel": { "type": "string", "description": "场景相对路径（path 同义）" },
+                "path": { "type": "string" },
+                "content": { "description": "完整场景文档：可直接传 scene.tree 返回的对象，或 JSON 文本", "oneOf": [{ "type": "object" }, { "type": "string" }] },
+                "root": { "type": "string" },
+            },
+            "anyOf": [{ "required": ["rel"] }, { "required": ["path"] }],
+            "required": ["content"],
+        }),
+        "shader.write" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "着色器相对路径（rel 同义）" },
+                "rel": { "type": "string" },
+                "content": { "type": "string", "description": "完整着色器源码文本" },
+                "root": { "type": "string" },
+            },
+            "anyOf": [{ "required": ["path"] }, { "required": ["rel"] }],
+            "required": ["content"],
+        }),
+        "scene.settings.get" => no_params("无参数：返回场景 settings 对象"),
+        "scene.settings.patch" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "patch": {
+                    "type": "object",
+                    "description": "settings 补丁：仅支持 rendering 块（backgroundColor/ambientIntensity/ambientColor；intensity 0..1，越界收敛并在 clamped 回显），未知块/字段/非法类型报错",
+                    "examples": [{ "rendering": { "backgroundColor": "#112233", "ambientIntensity": 0.4 } }],
+                },
+            },
+            "required": ["patch"],
+            "examples": [{ "patch": { "rendering": { "backgroundColor": "#112233" } } }],
+        }),
+        "editor.state" => no_params("无参数：返回项目/场景/选中/视图/dirty（dirty 为后端权威值）"),
+        "history.undo" | "history.redo" => no_params("无参数：执行撤销/重做并返回历史状态"),
+
+        "state.restore" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "doc": { "type": "object", "description": "state.snapshot/scene.tree 返回的完整场景文档对象" },
+            },
+            "required": ["doc"],
+        }),
+        _ => return None,
+    };
+    Some(spec)
+}
+
+fn param_spec_nodes(method: &str) -> Option<serde_json::Value> {
+    let spec = match method {
+        "node.select" => serde_json::json!({
+            "type": "object",
+            "properties": { "id": { "type": "string", "description": "节点 id；空串/缺省 = 取消选中" } },
+            "examples": [{ "id": "node_1" }],
+        }),
+        "node.add" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "kind": { "type": "string", "description": "节点类型", "examples": ["mesh", "light", "camera", "group", "model", "terrain", "audio"] },
+                "subtype": { "type": "string", "description": "mesh 几何 / light 类型 / skybox 等分支" },
+                "parentId": { "type": "string", "description": "父节点 id（parent 同义）" },
+                "name": { "type": "string" },
+                "position": { "type": "object", "description": "{x,y,z}，米；所有节点类型均生效" },
+                "rotation": { "type": "object", "description": "{x,y,z}，度，XYZ 欧拉序（不支持四元数/目标点）" },
+                "scale": { "type": "object", "description": "{x,y,z}" },
+                "size": { "type": "object", "description": "mesh 尺寸 {x,y,z}" },
+                "material": { "type": "string", "description": ".mat 资产相对路径；材质属性用 material.set" },
+                "geometry": { "type": "string", "description": "mesh 几何：box/sphere/plane/quad/cylinder/cone/torus/capsule（拼错报错）" },
+                "lightKind": { "type": "string", "description": "light 类型：point/directional/ambient/spot" },
+                "skyKind": { "type": "string", "description": "skybox 类型：procedural/cube" },
+                "fogKind": { "type": "string", "description": "fog 类型：linear/exponential" },
+                "rel": { "type": "string", "description": "资产类节点路径（script/model/audio/terrain）；path 同义" },
+                "props": { "type": "object", "description": "其余节点属性字段包（按节点实例字段收敛，未知属性报错）" },
+            },
+            "required": ["kind"],
+            "examples": [{ "kind": "mesh", "geometry": "box", "size": { "x": 2, "y": 1, "z": 2 }, "material": "assets/Materials/Red.mat", "position": { "x": 0, "y": 1, "z": 0 } }],
+        }),
+        "node.remove" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "ids": { "type": "array", "items": { "type": "string" } },
+            },
+            "examples": [{ "id": "node_1" }, { "ids": ["node_1", "node_2"] }],
+        }),
+        "node.rename" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+            },
+            "required": ["id", "name"],
+            "examples": [{ "id": "node_1", "name": "Ground" }],
+        }),
+        "node.set" => serde_json::json!({
+            "type": "object",
+            "description": "单属性 {id,prop,value} 或字段包；geometry 校验枚举、material 仅收 .mat 路径、未知属性报错并回传可写清单",
+            "properties": {
+                "id": { "type": "string" },
+                "prop": { "type": "string", "description": "单属性名（与 value 配对）" },
+                "value": { "description": "单属性值" },
+                "transform": { "type": "object", "description": "{position,rotation,scale} 部分合并" },
+            },
+            "required": ["id"],
+            "examples": [{ "id": "node_1", "visible": false }, { "id": "node_1", "transform": { "position": { "y": 2 } } }],
+        }),
+        "node.component.add" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "type": { "type": "string", "description": "内置组件：rigidBody/collider/light/audioSource/animationClip；省略 = 脚本组件" },
+                "script": { "type": "string", "description": "脚本组件：.ts 相对路径（rel/path 同义）" },
+                "lightKind": { "type": "string", "description": "type=light 时可指定灯光分支" },
+            },
+            "required": ["id"],
+            "examples": [{ "id": "node_1", "script": "src/Player.ts" }, { "id": "node_1", "type": "rigidBody" }],
+        }),
+        "node.component.set" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "type": { "type": "string", "description": "组件类型（同类型多实例时用 compId）" },
+                "compId": { "type": "string" },
+                "props": { "type": "object", "description": "脚本组件属性表（按 @property 声明合并）" },
+                "enabled": { "type": "boolean" },
+            },
+            "required": ["id"],
+            "examples": [{ "id": "node_1", "type": "light", "castShadow": true }],
+        }),
+        _ => return None,
+    };
+    Some(spec)
+}
+
+fn param_spec_preview_assets(method: &str) -> Option<serde_json::Value> {
+    let spec = match method {
+        "preview.open" | "preview.start" => no_params("无参数（导出并启动预览服务器）"),
+        "preview.close" | "preview.stop" => no_params("无参数"),
+        "preview.status" => no_params("无参数：返回 {running,ready,url,port,dir}"),
+        "preview.screenshot" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "enum": ["editor"], "description": "截取来源；当前仅支持 editor（预览帧跨域，暂不可截取）" },
+            },
+        }),
+
+        "asset.list" => serde_json::json!({
+            "type": "object",
+            "properties": { "root": { "type": "string", "description": "项目根（缺省当前编辑器项目）" } },
+        }),
+        "asset.read" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" },
+                "root": { "type": "string" },
+                "startLine": { "type": "integer" },
+                "endLine": { "type": "integer" },
+            },
+            "required": ["path"],
+        }),
+        "asset.write" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" },
+                "content": { "type": "string" },
+                "root": { "type": "string" },
+            },
+            "required": ["path", "content"],
+        }),
+        "asset.create" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": { "type": "string", "description": "scene/script/material/shader/texcube/skybox/prefab/anim/terrain/folder" },
+                "dir": { "type": "string", "description": "目标目录（项目相对）" },
+                "name": { "type": "string" },
+                "path": { "type": "string", "description": "完整目标路径（可代替 dir+name；扩展名须与类型匹配）" },
+                "shaderKind": { "type": "string" },
+                "skyKind": { "type": "string" },
+            },
+            "required": ["type"],
+            "examples": [{ "type": "material", "path": "assets/Materials/Red.mat" }],
+        }),
+        "asset.select" => serde_json::json!({
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "项目相对路径" } },
+            "required": ["path"],
+        }),
+        "asset.delete" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "项目相对路径（文件或目录）" },
+            },
+            "required": ["path"],
+            "description": "返回 deleted 与 referencedBy（仍引用该资产的场景节点数）",
+            "examples": [{ "path": "assets/Materials/Red.mat" }],
+        }),
+        "asset.rename" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "原路径（项目相对）" },
+                "newName": { "type": "string", "description": "新名称（不是 name/to；无扩展名时沿用原扩展名）" },
+            },
+            "required": ["path", "newName"],
+            "examples": [{ "path": "assets/Materials/Red.mat", "newName": "WallRed.mat" }],
+        }),
+        "asset.refresh" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "description": "资产相对路径或路径数组；缺省 = 全部已加载引用",
+                    "oneOf": [
+                        { "type": "string" },
+                        { "type": "array", "items": { "type": "string" } },
+                    ],
+                },
+            },
+            "examples": [{ "path": "assets/Materials/Red.mat" }, { "path": ["assets/Materials/Red.mat", "assets/Textures/a.png"] }],
+        }),
+        "material.get" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": ".mat 资产相对路径", "examples": ["assets/Materials/Red.mat"] },
+            },
+            "required": ["path"],
+            "examples": [{ "path": "assets/Materials/Red.mat" }],
+        }),
+        "material.set" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": ".mat 资产相对路径" },
+                "props": {
+                    "type": "object",
+                    "description": "材质字段包：PBR 参数（color/#hex、metalness、roughness、emissive 等）与 props.props 着色器参数",
+                    "examples": [{ "color": "#ff3300", "roughness": 0.4 }],
+                },
+                "shader": { "type": "string", "description": "切换挂载的 .shader 相对路径（可省略）" },
+                "name": { "type": "string", "description": "材质显示名（可省略，缺省沿用文件名）" },
+            },
+            "required": ["path"],
+            "examples": [
+                { "path": "assets/Materials/Red.mat", "props": { "color": "#ff3300", "roughness": 0.4 } },
+                { "path": "assets/Materials/Glow.mat", "props": { "emissionEnabled": true, "emissive": "#00ffcc", "props": { "uPulse": 0.8 } } },
+            ],
+        }),
+        _ => return None,
+    };
+    Some(spec)
+}
 fn perms_file_path(app: &AppHandle) -> std::path::PathBuf {
     crate::appdirs::config_root(app).join("devtools_perms.json")
+}
+
+/// 连接发现文件：固定端口被占用回退随机端口时，外部 Agent 靠它找到当前端口。
+fn discovery_file_path(app: &AppHandle) -> std::path::PathBuf {
+    crate::appdirs::config_root(app).join("devtools.json")
+}
+
+/// 原子写（tmp + rename）：避免外部客户端读到半截 JSON。
+fn write_discovery_file(app: &AppHandle, port: u16) {
+    let path = discovery_file_path(app);
+    let body = serde_json::json!({
+        "port": port,
+        "pid": std::process::id(),
+        "protocol": "tcp-jsonlines",
+        "appVersion": app.package_info().version.to_string(),
+        "startedAt": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+    });
+    let Ok(text) = serde_json::to_string_pretty(&body) else {
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &path).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+}
+
+fn remove_discovery_file(app: &AppHandle) {
+    let _ = std::fs::remove_file(discovery_file_path(app));
 }
 
 /// 当前工具启用状态（默认全部启用；磁盘存档覆盖之）。缓存进 DevToolsState，首次读取时加载。
@@ -327,9 +892,18 @@ fn listener_ready_set() -> &'static Mutex<HashSet<String>> {
 
 /// 前端回执：本窗口的 devtools:cmd 监听器已安装（编辑器窗口启动时调用）
 #[tauri::command]
-pub async fn devtools_listener_ready(label: String) -> Result<(), String> {
+pub async fn devtools_listener_ready(app: tauri::AppHandle, label: String) -> Result<(), String> {
     if let Ok(mut set) = listener_ready_set().lock() {
-        set.insert(label);
+        set.insert(label.clone());
+    }
+    // 首创窗口聚焦事件可能晚于 JS 就绪：就绪回执时若尚无活跃编辑器，先认领本窗口，
+    // 避免 hello 报 activeEditor:null 而 editor.state 又能正常执行的矛盾态。
+    if label.starts_with("editor-") {
+        if let Some(state) = app.try_state::<crate::ActiveEditorWindow>() {
+            if state.get().is_none() {
+                state.set(label);
+            }
+        }
     }
     Ok(())
 }
@@ -346,9 +920,20 @@ pub(crate) fn forget_listener_ready(label: &str) {
 // ---------------------------------------------------------------------------
 
 /// 多会话：获取当前活跃编辑器窗口 label（devtools/MCP 命令路由目标）。
-/// 无活跃编辑器时回退 None，调用方各自处理（报错或跳过）。
+/// 聚焦事件尚未到达时（冷启动窗口未激活）回退到任一 editor-* 窗口，
+/// 避免 hello/editor.state 一个说没有编辑器、一个又能执行。
 fn active_editor_label(app: &AppHandle) -> Option<String> {
-    app.state::<crate::ActiveEditorWindow>().get()
+    app.state::<crate::ActiveEditorWindow>().get().or_else(|| {
+        app.webview_windows()
+            .into_keys()
+            .find(|label| label.starts_with("editor-"))
+            .or_else(|| {
+                // 窗口枚举尚未反映新窗口时，以场景会话反查（editor.state 能执行即会话已绑定）
+                let state = app.try_state::<crate::scene::SceneSession>()?;
+                let hub = state.hub().ok()?;
+                crate::scene::any_editor_label(&hub)
+            })
+    })
 }
 
 /// 会话当前打开的项目根（未打开项目返回 None；供 scene.list / asset.list 扫描用）。
@@ -431,6 +1016,49 @@ fn project_open_local(
         "window": label,
         "note": "已在新编辑器窗口打开项目（等同首页打开项目），可继续 node.* / scene.* 操作",
     })))
+}
+
+/// 自动打开项目（裸 TCP 客户端的服务端兜底）：params.root/path 指向的现存目录
+/// 优先，其次最近项目。成功后返回承载窗口 label。阻塞数十秒级，仅连接线程调用。
+fn auto_open_editor(app: &AppHandle, params: &serde_json::Value) -> Option<String> {
+    let explicit = ["root", "path"]
+        .iter()
+        .filter_map(|k| params.get(*k).and_then(|v| v.as_str()))
+        .map(str::trim)
+        .find(|s| !s.is_empty() && std::path::Path::new(s).is_dir())
+        .map(String::from);
+    let path = explicit.or_else(|| crate::store::list_recent_paths(app).into_iter().next())?;
+    match project_open_local(app, &serde_json::json!({ "path": path })) {
+        Some(Ok(v)) => {
+            let label = v.get("window").and_then(|w| w.as_str()).map(String::from);
+            // 监听器就绪 ≠ 场景已挂载：等 engine.mounted，否则紧接着的命令会报
+            // 「编辑器未就绪」（首次自动开窗后立即重试的典型失败）
+            if label.is_some() && !wait_editor_mounted(app, 30) {
+                eprintln!("[devtools] 自动打开后编辑器 30s 内未挂载，命令可能失败");
+            }
+            label
+        }
+        Some(Err(e)) => {
+            eprintln!("[devtools] 自动打开项目失败: {e}");
+            None
+        }
+        // project_open_local 仅在已有活跃编辑器时返回 None（并发下可能出现）
+        None => active_editor_label(app),
+    }
+}
+
+/// 轮询场景挂载状态（editor.state.mounted），供自动开窗后等待真正可执行。
+fn wait_editor_mounted(app: &AppHandle, max_secs: u64) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(max_secs);
+    while std::time::Instant::now() < deadline {
+        if let Ok(v) = internal_dispatch(app, "editor.state", serde_json::json!({})) {
+            if v.get("mounted").and_then(|m| m.as_bool()).unwrap_or(false) {
+                return true;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    false
 }
 
 /// 轮询等待窗口的 devtools:cmd 监听器就绪（秒级上限；超时放行——由转发层
@@ -732,11 +1360,65 @@ fn asset_list_of(root: &str) -> Result<serde_json::Value, String> {
 }
 
 /// 尝试在 Rust 本地执行；返回 Ok(None) = 该方法需要前端，应照常转发。
+/// 本地直答方法的参数白名单（未知参数拒绝，避免拼错字段被静默忽略）。
+/// autoOpen/root 是协议级参数，始终放行。
+fn reject_local_unknown_params(
+    method: &str,
+    params: &serde_json::Value,
+) -> Option<Result<serde_json::Value, String>> {
+    let allowed: &[&str] = match method {
+        "devtools.hello" | "devtools.tools" | "ping" | "editor.health" | "project.list" => &[],
+        "devtools.catalog" => &["verbose"],
+        "devtools.subscribe" => &["events"],
+        "project.create" => &["name", "parent"],
+        "project.open" => &["path"],
+        "scene.list" | "asset.list" => &["root"],
+        "scene.write" => &["rel", "path", "content", "root"],
+        "shader.write" => &["path", "rel", "content", "root"],
+        "asset.read" => &["path", "root", "startLine", "endLine"],
+        "asset.write" => &["path", "content", "root"],
+        "file.index" => &["path", "root"],
+        "file.search" => &["path", "query", "topK", "root"],
+        "file.module" => &["path", "title", "no", "root"],
+        "scene.tree" | "state.snapshot" => &[],
+        // rel/path 为弃用兼容参数：接受但忽略（保存目标固定为当前场景）
+        "scene.save" => &["rel", "path"],
+        _ => return None,
+    };
+    let Some(obj) = params.as_object() else {
+        return Some(Err(format!("{method} 的 params 应为 JSON 对象")));
+    };
+    let unknown: Vec<&str> = obj
+        .keys()
+        .filter(|k| {
+            !allowed.contains(&k.as_str()) && !matches!(k.as_str(), "autoOpen" | "root")
+        })
+        .map(String::as_str)
+        .collect();
+    if unknown.is_empty() {
+        return None;
+    }
+    let mut supported: Vec<&str> = allowed.to_vec();
+    for p in ["autoOpen", "root"] {
+        if !supported.contains(&p) {
+            supported.push(p);
+        }
+    }
+    Some(Err(format!(
+        "{method} 不支持参数: {}（支持: {}）",
+        unknown.join("/"),
+        supported.join("/")
+    )))
+}
+
 fn try_local(
     app: &AppHandle,
     method: &str,
     params: &serde_json::Value,
 ) -> Option<Result<serde_json::Value, String>> {
+    if let Some(err) = reject_local_unknown_params(method, params) {
+        return Some(err);
+    }
     Some(match method {
         "project.list" => project_recent_list(app),
         // project.create 本地直答：模板从 exe 旁（生产）/仓库（开发）public/templates
@@ -790,10 +1472,20 @@ fn try_local(
             else {
                 return Some(Err("缺少 rel 参数（场景相对路径，如 assets/Main.scene）".to_string()));
             };
-            let Some(content) = params.get("content").and_then(|c| c.as_str()) else {
-                return Some(Err("缺少 content 参数（完整场景文档 JSON 文本）".to_string()));
+            // content 收文本或对象两种形态（与 scene.tree/state.snapshot 返回的对象直接互通）
+            let content = match params.get("content") {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(v @ serde_json::Value::Object(_)) => {
+                    serde_json::to_string_pretty(v).map_err(|e| e.to_string()).unwrap_or_default()
+                }
+                _ => {
+                    return Some(Err(
+                        "缺少 content 参数（完整场景文档：可直接传 scene.tree 返回的对象，或 JSON 文本）"
+                            .to_string(),
+                    ))
+                }
             };
-            scene_write_of(&root, path, content)
+            scene_write_of(&root, path, &content)
         }
         "shader.write" => {
             let Some(root) = workspace_root(app, params) else {
@@ -824,7 +1516,22 @@ fn try_local(
             asset_write_of(&root, path, content)
         }
         "scene.tree" | "state.snapshot" => scene_doc_blocking(app),
-        "scene.save" => scene_save_blocking(app).map(|_| serde_json::json!({ "ok": true })),
+        "scene.save" => scene_save_blocking(app).map(|revision| {
+            // 同步落盘后返回：flushed=true + dirty=false 可作「保存完成」信号，
+            // 不必再轮询 editor.state（前端 dirty 镜像有事件延迟）
+            let mut out = serde_json::json!({
+                "ok": true,
+                "flushed": true,
+                "dirty": false,
+                "revision": revision,
+            });
+            if params.get("rel").is_some() || params.get("path").is_some() {
+                out["deprecated"] = serde_json::json!(
+                    "scene.save 的保存目标固定为当前打开场景；rel/path 已忽略（仅为兼容旧脚本保留）"
+                );
+            }
+            out
+        }),
         // 文件内模块索引（brain.fileidx）：大文本文件 @ 引用走"索引+按需检索"，
         // 不整包进 LLM 上下文；file.search 索引失效自动重建；file.module 按目录
         // 序号/标题读单模块全文
@@ -853,7 +1560,47 @@ fn try_local(
                 brain.fileidx_module(&root, path, title, no)
             }
         }
+        // 统一握手：外部 Agent 连上先问这里（不需要编辑器），据此判断能直接调什么
+        "devtools.hello" => Ok(hello_info(app)),
+        // 工具权限清单（不需要编辑器也能读；权限权威存储在 Rust）
+        "devtools.tools" => Ok(serde_json::json!({ "tools": current_tools(app) })),
+        // 命令集自描述（不需要编辑器）：名称/路由/权限，裸 TCP 客户端据此编程化调用；
+        // verbose=true 附带常用方法参数 schema 与示例
+        "devtools.catalog" => Ok(catalog_response(
+            app,
+            params
+                .get("verbose")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        )),
         _ => return None,
+    })
+}
+
+/// 连接自描述：身份/协议/活跃会话。外部客户端的唯一探测入口。
+fn hello_info(app: &AppHandle) -> serde_json::Value {
+    let active = active_editor_label(app);
+    let project = if active.is_some() {
+        scene_root_blocking(app)
+    } else {
+        None
+    };
+    let port = app
+        .state::<DevToolsState>()
+        .inner
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|rt| rt.port))
+        .unwrap_or(0);
+    serde_json::json!({
+        "name": "tve-devtools",
+        "protocolVersion": 1,
+        "transport": "tcp-jsonlines",
+        "port": port,
+        "pid": std::process::id(),
+        "appVersion": app.package_info().version.to_string(),
+        "activeEditor": active,
+        "activeProject": project,
     })
 }
 
@@ -983,6 +1730,11 @@ fn locked_write_reason(path: &str) -> Option<String> {
             "着色器资产请用 shader.write（写入前按引擎着色器解析校验 Shader 指令/Base 分支/钩子，防写坏不可渲染）".to_string(),
         );
     }
+    if lower.ends_with(".mat") {
+        return Some(
+            "材质资产请用 material.set {path, props}（PBR 参数/着色器 props 走引擎 .mat 序列化并即时刷新视口）；asset.write 不支持引擎管理的格式".to_string(),
+        );
+    }
     if let Some(ext) = WRITE_LOCKED_EXTS.iter().find(|e| lower.ends_with(*e)) {
         return Some(format!(
             "「{ext}」是引擎管理的格式，不支持通用文本直写（防结构损坏）；脚本/着色器/文档/普通 JSON 等文本资产用 asset.write"
@@ -1092,11 +1844,50 @@ fn scene_doc_blocking(app: &AppHandle) -> Result<serde_json::Value, String> {
     crate::scene::scene_doc_for(&mut hub, &label)
 }
 
-fn scene_save_blocking(app: &AppHandle) -> Result<(), String> {
+/// 向已订阅的控制端广播结构化事件（Rust 侧变更用；慢客户端丢弃不阻塞）
+pub(crate) fn broadcast_event(app: &AppHandle, event: &str, data: serde_json::Value) {
+    let Some(state) = app.try_state::<DevToolsState>() else {
+        return;
+    };
+    let Ok(guard) = state.inner.lock() else {
+        return;
+    };
+    let Some(rt) = guard.as_ref() else {
+        return;
+    };
+    let Ok(s) =
+        serde_json::to_string(&serde_json::json!({ "event": event, "data": data }))
+    else {
+        return;
+    };
+    let Ok(clients) = rt.clients.lock() else {
+        return;
+    };
+    for (_, tx) in clients.iter() {
+        let _ = tx.try_send(s.clone());
+    }
+}
+
+fn scene_save_blocking(app: &AppHandle) -> Result<u64, String> {
     let label = active_editor_label(app).ok_or("没有活跃的编辑器窗口")?;
     let state = app.state::<crate::scene::SceneSession>();
     let mut hub = state.hub()?;
-    crate::scene::scene_save_for(&mut hub, &label)
+    let revision = crate::scene::scene_save_for(&mut hub, &label)?;
+    // 通知前端窗口「这是自写盘」：文件监听必须跳过本次 .scene 事件，
+    // 否则保存会被当成外部修改触发整树重载（每存一次广播 replace）。
+    if let Some((root, rel)) = crate::scene::scene_current_key(&hub, &label) {
+        let _ = app.emit(
+            "scene:self-save",
+            serde_json::json!({ "root": root, "rel": rel, "revision": revision }),
+        );
+    }
+    // 保存完成事件：外部客户端可不等响应体也能收到（含 revision）
+    broadcast_event(
+        app,
+        "scene.saved",
+        serde_json::json!({ "revision": revision, "dirty": false }),
+    );
+    Ok(revision)
 }
 
 /// MCP stdio 桥程序路径：与主程序同目录的 mcp.exe（不存在时回退为裸文件名，供用户自行修正）。
@@ -1110,20 +1901,58 @@ fn mcp_stdio_command() -> String {
         .unwrap_or_else(|| NAME.to_string())
 }
 
+/// 错误文本 → 稳定错误码（外部客户端据此分支，不依赖中文散文；未知文本回 ERROR）。
+fn error_code(msg: &str) -> &'static str {
+    if msg.contains("没有活跃的编辑器窗口") || msg.contains("没有工作区项目") {
+        "NO_ACTIVE_EDITOR"
+    } else if msg.contains("编辑器执行超时") {
+        "EDITOR_TIMEOUT"
+    } else if msg.starts_with("未知方法") {
+        "UNKNOWN_METHOD"
+    } else if msg.starts_with("工具「") && msg.contains("未启用") {
+        "TOOL_DISABLED"
+    } else if msg.starts_with("材质不存在")
+        || msg.starts_with("资源不存在")
+        || msg.starts_with("文件不存在")
+    {
+        "NOT_FOUND"
+    } else if msg.starts_with("材质解析失败") {
+        "PARSE_ERROR"
+    } else if msg.starts_with("缺少") || msg.contains("不支持参数") || msg.contains("未知 settings") {
+        "BAD_PARAMS"
+    } else if msg.contains("SCENE_NOT_READY") || msg.contains("场景尚未就绪") {
+        "SCENE_NOT_READY"
+    } else if msg.contains("无法连接") {
+        "CONNECTION"
+    } else {
+        "ERROR"
+    }
+}
+
 fn send_reply(
     tx: &SyncSender<String>,
     id: serde_json::Value,
     result: serde_json::Value,
     error: Option<String>,
 ) {
-    let resp = serde_json::json!({ "id": id, "result": result, "error": error });
+    let code = error.as_deref().map(error_code);
+    let mut resp = serde_json::json!({ "id": id, "result": result, "error": error });
+    if let Some(c) = code {
+        resp["code"] = serde_json::json!(c);
+    }
     if let Ok(s) = serde_json::to_string(&resp) {
         let _ = tx.send(s);
     }
 }
 
 /// 处理一条客户端命令：Rust 本地方法直接应答；其余转发编辑器窗口前端执行器。
-fn dispatch_command(line: &str, rt: &DevToolsRuntime, app: &AppHandle, tx: &SyncSender<String>) {
+fn dispatch_command(
+    line: &str,
+    rt: &DevToolsRuntime,
+    app: &AppHandle,
+    tx: &SyncSender<String>,
+    client_id: u64,
+) {
     let msg: serde_json::Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => return,
@@ -1154,6 +1983,25 @@ fn dispatch_command(line: &str, rt: &DevToolsRuntime, app: &AppHandle, tx: &Sync
             );
             return;
         }
+        // 事件订阅：默认不推送（裸客户端只看到自己的响应），需要日志事件时显式开启
+        "devtools.subscribe" => {
+            let want = params
+                .get("events")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            {
+                let mut clients = rt.clients.lock().unwrap();
+                if want {
+                    if !clients.iter().any(|(id, _)| *id == client_id) {
+                        clients.push((client_id, tx.clone()));
+                    }
+                } else {
+                    clients.retain(|(id, _)| *id != client_id);
+                }
+            }
+            send_reply(tx, id, serde_json::json!({ "events": want }), None);
+            return;
+        }
         _ => {}
     }
 
@@ -1168,7 +2016,25 @@ fn dispatch_command(line: &str, rt: &DevToolsRuntime, app: &AppHandle, tx: &Sync
     if let Some(s) = app.try_state::<DevToolsState>() {
         log_call(&s, "control", &method, true, 0, "已受理（本地直答或转发编辑器）");
     }
+    // 裸 TCP 直链的服务端兜底：确实需要编辑器的方法在无会话时自动打开项目。
+    // 未知方法不触发开窗（避免拼写错误就弹窗）；autoOpen=false 可显式关闭。
+    let auto_open = params
+        .get("autoOpen")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+        && !NO_AUTO_OPEN.contains(&method.as_str());
+    let needs_editor = EDITOR_METHODS.contains(&method.as_str());
     if let Some(res) = try_local(app, &method, &params) {
+        let res = match res {
+            Err(e) if auto_open && needs_editor && error_code(&e) == "NO_ACTIVE_EDITOR" => {
+                if auto_open_editor(app, &params).is_some() {
+                    try_local(app, &method, &params).unwrap_or(Err(e))
+                } else {
+                    Err(e)
+                }
+            }
+            other => other,
+        };
         match res {
             Ok(v) => send_reply(tx, id, v, None),
             Err(e) => send_reply(tx, id, serde_json::Value::Null, Some(e)),
@@ -1180,6 +2046,13 @@ fn dispatch_command(line: &str, rt: &DevToolsRuntime, app: &AppHandle, tx: &Sync
     // 多会话：只有活跃编辑器窗口（最近聚焦的 editor-*）安装了监听器并持有引擎/场景状态。
     let active_label = match active_editor_label(app) {
         Some(l) => l,
+        None if auto_open && needs_editor => match auto_open_editor(app, &params) {
+            Some(l) => l,
+            None => {
+                send_reply(tx, id, serde_json::Value::Null, Some("没有活跃的编辑器窗口".to_string()));
+                return;
+            }
+        },
         None => {
             send_reply(tx, id, serde_json::Value::Null, Some("没有活跃的编辑器窗口".to_string()));
             return;
@@ -1216,32 +2089,67 @@ fn writer_loop(mut stream: TcpStream, rx: Receiver<String>, stop: Arc<AtomicBool
     }
 }
 
+/// 单行上限：防止半行无限累积（合法的大资产写入远小于此值）。
+const MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
+
+enum LineRead {
+    Line,
+    Eof,
+    Fatal,
+}
+
+/// 读一条换行分隔消息。读超时只是"暂时没数据"：保留已读半行继续等，
+/// 不能清空重来——否则大 payload 分片到达时会丢半行、后续内容全部错位。
+fn read_message_line(reader: &mut BufReader<TcpStream>, buf: &mut Vec<u8>) -> LineRead {
+    loop {
+        match reader.read_until(b'\n', buf) {
+            // EOF：缓冲里还有内容则当作最后一条完整消息
+            Ok(0) => {
+                return if buf.is_empty() {
+                    LineRead::Eof
+                } else {
+                    LineRead::Line
+                }
+            }
+            Ok(_) => return LineRead::Line,
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                if buf.len() > MAX_LINE_BYTES {
+                    return LineRead::Fatal;
+                }
+                continue;
+            }
+            Err(_) => return LineRead::Fatal,
+        }
+    }
+}
+
 fn reader_loop(
     reader: &mut BufReader<TcpStream>,
     rt: &DevToolsRuntime,
     app: &AppHandle,
     tx: &SyncSender<String>,
+    client_id: u64,
 ) {
+    let mut buf: Vec<u8> = Vec::new();
     loop {
         if rt.stop.load(Ordering::SeqCst) {
             break;
         }
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) => break, // 客户端断开
-            Ok(_) => {
-                let s = line.trim();
+        buf.clear();
+        match read_message_line(reader, &mut buf) {
+            LineRead::Eof | LineRead::Fatal => break,
+            LineRead::Line => {
+                let Ok(text) = std::str::from_utf8(&buf) else {
+                    continue;
+                };
+                let s = text.trim();
                 if !s.is_empty() {
-                    dispatch_command(s, rt, app, tx);
+                    dispatch_command(s, rt, app, tx, client_id);
                 }
             }
-            Err(e)
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                continue;
-            }
-            Err(_) => break,
         }
     }
 }
@@ -1255,17 +2163,20 @@ fn spawn_client(stream: TcpStream, rt: Arc<DevToolsRuntime>, app: AppHandle) {
     let mut reader = BufReader::new(stream);
     // 探测协议：读第一行；以 HTTP 方法开头（POST / GET / PUT / DELETE）则按 HTTP（MCP）处理，
     // 否则按 JSON-lines 处理。一条连接只会是其中一种。
-    let mut first = String::new();
-    let is_http = match reader.read_line(&mut first) {
-        Ok(_) => {
-            let t = first.trim();
+    // 等待首条消息期间读超时只继续等（同 read_message_line），不能丢半行。
+    let mut first_buf: Vec<u8> = Vec::new();
+    let is_http = match read_message_line(&mut reader, &mut first_buf) {
+        LineRead::Line => {
+            let head = String::from_utf8_lossy(&first_buf);
+            let t = head.trim_start();
             t.starts_with("POST ")
                 || t.starts_with("GET ")
                 || t.starts_with("PUT ")
                 || t.starts_with("DELETE ")
         }
-        Err(_) => false,
+        LineRead::Eof | LineRead::Fatal => false,
     };
+    let first = String::from_utf8_lossy(&first_buf).to_string();
 
     if is_http {
         let rt_r = rt.clone();
@@ -1276,9 +2187,12 @@ fn spawn_client(stream: TcpStream, rt: Arc<DevToolsRuntime>, app: AppHandle) {
         return;
     }
 
-    // JSON-lines 客户端：注册广播目标（不参与 HTTP MCP）
+    // JSON-lines 客户端：不默认注册广播（裸客户端只看到自己的响应）；
+    // 需要日志事件时显式 devtools.subscribe。
+    let client_id = rt
+        .next_client_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let (tx, rx) = sync_channel::<String>(256);
-    rt.clients.lock().unwrap().push(tx.clone());
     let stop = rt.stop.clone();
     std::thread::spawn(move || writer_loop(write_half, rx, stop));
     let rt_r = rt.clone();
@@ -1286,9 +2200,11 @@ fn spawn_client(stream: TcpStream, rt: Arc<DevToolsRuntime>, app: AppHandle) {
     std::thread::spawn(move || {
         let s = first.trim();
         if !s.is_empty() {
-            dispatch_command(s, &rt_r, &app_r, &tx);
+            dispatch_command(s, &rt_r, &app_r, &tx, client_id);
         }
-        reader_loop(&mut reader, &rt_r, &app_r, &tx);
+        reader_loop(&mut reader, &rt_r, &app_r, &tx, client_id);
+        // 断开后取消广播登记：否则 clients 只增不减，事件会持续发往死连接
+        rt_r.clients.lock().unwrap().retain(|(id, _)| *id != client_id);
     });
 }
 
@@ -1533,6 +2449,7 @@ pub fn start_runtime(app: &AppHandle, port: Option<u16>) -> Result<DevToolsInfo,
         port,
         token: token.clone(),
         clients: Mutex::new(Vec::new()),
+        next_client_id: std::sync::atomic::AtomicU64::new(1),
         pending: Mutex::new(HashMap::new()),
         http_pending: Mutex::new(HashMap::new()),
         name_to_method: Mutex::new(HashMap::new()),
@@ -1542,6 +2459,7 @@ pub fn start_runtime(app: &AppHandle, port: Option<u16>) -> Result<DevToolsInfo,
     let app_bg = app.clone();
     std::thread::spawn(move || accept_loop(listener, rt_bg, app_bg));
     *state.inner.lock().map_err(|e| e.to_string())? = Some(rt.clone());
+    write_discovery_file(app, port);
     Ok(rt.info())
 }
 
@@ -1570,9 +2488,13 @@ pub async fn devtools_start(app: AppHandle, port: Option<u16>) -> Result<DevTool
 
 /// 停止开发者服务控制服务器
 #[tauri::command]
-pub async fn devtools_stop(state: State<'_, DevToolsState>) -> Result<(), String> {
+pub async fn devtools_stop(
+    app: AppHandle,
+    state: State<'_, DevToolsState>,
+) -> Result<(), String> {
     if let Some(rt) = state.inner.lock().map_err(|e| e.to_string())?.take() {
         rt.stop.store(true, Ordering::SeqCst);
+        remove_discovery_file(&app);
     }
     Ok(())
 }
@@ -1712,11 +2634,15 @@ pub async fn devtools_reply(
         return Ok(());
     };
     if let Some(p) = rt.pending.lock().unwrap().remove(&token) {
-        let resp = serde_json::json!({
+        let code = error.as_deref().map(error_code);
+        let mut resp = serde_json::json!({
             "id": p.req_id,
             "result": result.unwrap_or(serde_json::Value::Null),
             "error": error,
         });
+        if let Some(c) = code {
+            resp["code"] = serde_json::json!(c);
+        }
         if let Ok(s) = serde_json::to_string(&resp) {
             let _ = p.tx.send(s);
         }
@@ -1747,8 +2673,161 @@ pub async fn devtools_push(
         return Ok(());
     };
     let clients = rt.clients.lock().unwrap();
-    for tx in clients.iter() {
-        let _ = tx.send(s.clone());
+    for (_, tx) in clients.iter() {
+        // 广播是遥测：慢客户端（不读/暂停）丢弃事件即可，绝不能阻塞持锁线程
+        let _ = tx.try_send(s.clone());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{error_code, read_message_line, LineRead};
+    use std::io::{BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn error_code_maps_stable_codes() {
+        assert_eq!(error_code("没有活跃的编辑器窗口"), "NO_ACTIVE_EDITOR");
+        assert_eq!(
+            error_code("没有活跃的编辑器窗口（请先打开项目进入编辑器）"),
+            "NO_ACTIVE_EDITOR"
+        );
+        assert_eq!(
+            error_code("没有工作区项目（可在助手左栏添加），也未打开编辑器"),
+            "NO_ACTIVE_EDITOR"
+        );
+        assert_eq!(error_code("编辑器执行超时（60s）"), "EDITOR_TIMEOUT");
+        assert_eq!(error_code("未知方法: foo.bar"), "UNKNOWN_METHOD");
+        assert_eq!(
+            error_code("工具「节点设置」未启用（可在首页 开发者服务 中开启）"),
+            "TOOL_DISABLED"
+        );
+        assert_eq!(error_code("材质不存在: assets/Red.mat"), "NOT_FOUND");
+        assert_eq!(error_code("资源不存在: assets/Red.mat"), "NOT_FOUND");
+        assert_eq!(
+            error_code("材质解析失败 'assets/Red.mat': 缺少 $type"),
+            "PARSE_ERROR"
+        );
+        assert_eq!(error_code("缺少 path 参数"), "BAD_PARAMS");
+        assert_eq!(
+            error_code("asset.list 不支持参数: bogus（支持: root/autoOpen/root）"),
+            "BAD_PARAMS"
+        );
+        assert_eq!(
+            error_code("场景尚未就绪（SCENE_NOT_READY）：编辑器仍在装载项目/场景"),
+            "SCENE_NOT_READY"
+        );
+        assert_eq!(
+            error_code("无法连接开发者服务 127.0.0.1:39100"),
+            "CONNECTION"
+        );
+        assert_eq!(error_code("其它失败"), "ERROR");
+    }
+
+    #[test]
+    fn command_routes_are_disjoint_and_cover_key_methods() {
+        use super::{EDITOR_METHODS, LOCAL_METHODS};
+        for m in EDITOR_METHODS {
+            assert!(
+                !LOCAL_METHODS.contains(m),
+                "{m} 同时出现在 local/editor 路由表"
+            );
+        }
+        for m in ["node.add", "scene.save", "preview.screenshot", "editor.state"] {
+            assert!(EDITOR_METHODS.contains(&m), "{m} 应归 editor 路由");
+        }
+        for m in ["material.get", "material.set", "asset.refresh", "preview.status"] {
+            assert!(EDITOR_METHODS.contains(&m), "{m} 应归 editor 路由");
+        }
+        for m in ["devtools.catalog", "project.open", "asset.read"] {
+            assert!(LOCAL_METHODS.contains(&m), "{m} 应归 local 路由");
+        }
+    }
+
+    #[test]
+    fn mat_write_rejection_points_to_material_set() {
+        let reason = super::locked_write_reason("assets/Materials/Red.mat")
+            .expect(".mat 应被 asset.write 拒绝");
+        assert!(reason.contains("material.set"), "拒绝理由应指向 material.set：{reason}");
+    }
+
+    #[test]
+    fn local_param_validation_rejects_unknown() {
+        use super::reject_local_unknown_params;
+        assert!(reject_local_unknown_params("asset.list", &serde_json::json!({ "root": "P" }))
+            .is_none());
+        let err = reject_local_unknown_params("asset.list", &serde_json::json!({ "bogus": 1 }))
+            .expect("应拒绝未知参数")
+            .unwrap_err();
+        assert!(err.contains("不支持参数") && err.contains("asset.list"), "{err}");
+        // autoOpen/root 是协议参数，始终放行
+        assert!(reject_local_unknown_params(
+            "asset.list",
+            &serde_json::json!({ "root": "P", "autoOpen": false })
+        )
+        .is_none());
+        // 前端路由方法不在这里校验
+        assert!(reject_local_unknown_params("scene.open", &serde_json::json!({ "rel": "a" }))
+            .is_none());
+    }
+
+    #[test]
+    fn catalog_fingerprint_is_stable() {
+        use super::catalog_fingerprint;
+        let a = catalog_fingerprint();
+        let b = catalog_fingerprint();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 16, "FNV-64 十六进制");
+    }
+
+    #[test]
+    fn param_spec_covers_every_catalog_method() {
+        use super::{param_spec, EDITOR_METHODS, LOCAL_METHODS};
+        for m in LOCAL_METHODS.iter().chain(EDITOR_METHODS.iter()) {
+            assert!(
+                param_spec(m).is_some(),
+                "{m} 缺少参数 schema（无参数命令也要用 no_params 显式声明）"
+            );
+        }
+    }
+
+    #[test]
+    fn param_spec_covers_material_and_refresh() {        use super::param_spec;
+        let material = param_spec("material.set").expect("material.set 应有参数 schema");
+        assert_eq!(material["required"][0], "path");
+        assert!(material["properties"]["props"].is_object());
+        let refresh = param_spec("asset.refresh").expect("asset.refresh 应有参数 schema");
+        assert!(refresh["properties"]["path"].is_object());
+        assert!(param_spec("no.such.method").is_none());
+    }
+
+    /// 回归：读超时不能丢半行。写端跨过 200ms 读超时把一条 JSON 分两段送达，
+    /// 旧实现（每次超时重新 read_line）会丢首段并静默解析失败。
+    #[test]
+    fn read_message_line_keeps_partial_across_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let writer = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().expect("accept");
+            s.write_all(b"{\"id\":1,\"pa").expect("write head");
+            s.flush().expect("flush head");
+            std::thread::sleep(std::time::Duration::from_millis(350));
+            s.write_all(b"rams\":{}}\n").expect("write tail");
+            s.flush().expect("flush tail");
+        });
+        let stream = TcpStream::connect(addr).expect("connect");
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_millis(200)))
+            .expect("timeout");
+        let mut reader = BufReader::new(stream);
+        let mut buf = Vec::new();
+        let got = read_message_line(&mut reader, &mut buf);
+        assert!(matches!(got, LineRead::Line));
+        assert_eq!(
+            String::from_utf8_lossy(&buf).trim_end(),
+            "{\"id\":1,\"params\":{}}"
+        );
+        writer.join().expect("writer");
+    }
 }

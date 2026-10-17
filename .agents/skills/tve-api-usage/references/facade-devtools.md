@@ -22,6 +22,23 @@
 现在要求开发者服务处于运行态——服务停用时调用被拒并提示开启；权限门控
 （`require_tool`）对助手与控制端同一份 `devtools_perms.json`。
 
+**进程外直连**（不经 MCP，裸 TCP 命令集即契约）：先读发现文件
+`config_root/devtools.json` 取端口，`devtools.hello` 握手、`devtools.catalog`
+取命令集（名称/路由 local|editor/权限）；事件默认不推，需
+`devtools.subscribe {events:true}`；`route:"editor"` 的方法无会话时服务端自动
+打开项目（`autoOpen:false` 关闭）；`devtools.catalog {verbose:true}` 带常用方法参数
+schema（46/46 命令全覆盖，无参数也显式声明）。材质写入口是 `material.set {path, props}`
+（.mat 不受 asset.write 直写）；外部改写资产后用 `asset.refresh` 失效缓存（删除的
+引用返回 `pruned`）；`preview.status` 返回真实可连状态；`scene.save` 同步落盘并返回
+`flushed/dirty/revision`；`history.undo/redo` 与 `scene.settings.patch` 提供回退与
+单字段设置（材质写入与 settings patch 都进撤销栈，undo 写回 .mat/信封并自动刷新）；
+订阅后还有 `node.added/removed/changed`、`settings.changed`、`scene.saved`、
+`asset.changed` 等结构化事件，自写盘有抑制窗不会重复推送；`scene.save` 不会再被
+文件监听误判为外部修改；`scene.open` 返回 `opened/dirty/reason`，`discard:true`
+可显式放弃未保存修改。错误码新增 `NOT_FOUND` / `PARSE_ERROR`（缺失与格式损坏可判别）。
+仓库内 `scripts/devtools/` 的 Node 客户端与 CLI 只是调试便利，不是运行前提。
+细则见 `tve-app-operations` references/devtools-connection.md。
+
 **局域网共享**（前端包装在 `src/app/lib/lan-share/`）：
 `lanShareStatus()`（状态快照，首次顺带从盘载入）、`lanShareNetInfo()`（本机地址清单）、
 `lanShareSetConfig(patch)`（补丁式，端口/网卡/口令变化重启监听）、`lanShareStart/Stop()`、

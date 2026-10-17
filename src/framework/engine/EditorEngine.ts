@@ -538,88 +538,88 @@ export class EditorEngine {
     this.graph.redo();
   }
 
-  addMesh(geometry: GeometryKind, parentId?: string, position?: Vec3): MeshNode {
-    return addMesh(this, geometry, parentId, position);
+  addMesh(geometry: GeometryKind, parentId?: string, position?: Vec3, name?: string): MeshNode {
+    return addMesh(this, geometry, parentId, position, name);
   }
 
-  addDataMesh(parentId?: string, position?: Vec3): MeshNode {
-    return addDataMesh(this, parentId, position);
+  addDataMesh(parentId?: string, position?: Vec3, name?: string): MeshNode {
+    return addDataMesh(this, parentId, position, name);
   }
 
-  addModel(rel: string, parentId?: string, position?: Vec3): MeshNode {
-    return addModel(this, rel, parentId, position);
+  addModel(rel: string, parentId?: string, position?: Vec3, name?: string): MeshNode {
+    return addModel(this, rel, parentId, position, name);
   }
 
-  addAudio(parentId?: string, source = ""): AudioNode {
-    return addAudio(this, parentId, source);
+  addAudio(parentId?: string, source = "", name?: string): AudioNode {
+    return addAudio(this, parentId, source, name);
   }
 
-  addLight(kind: LightNode["lightKind"], parentId?: string): LightNode {
-    return addLight(this, kind, parentId);
+  addLight(kind: LightNode["lightKind"], parentId?: string, name?: string): LightNode {
+    return addLight(this, kind, parentId, name);
   }
 
-  addParticleSystem(parentId?: string): ParticleSystemNode {
-    return addParticleSystem(this, parentId);
+  addParticleSystem(parentId?: string, name?: string): ParticleSystemNode {
+    return addParticleSystem(this, parentId, name);
   }
 
-  addTerrain(parentId?: string, init?: { asset?: string; terrain?: TerrainSettings }): TerrainNode {
-    return addTerrain(this, parentId, init);
+  addTerrain(parentId?: string, init?: { asset?: string; terrain?: TerrainSettings }, name?: string): TerrainNode {
+    return addTerrain(this, parentId, init, name);
   }
 
-  addCamera(parentId?: string): CameraNode {
-    return addCamera(this, parentId);
+  addCamera(parentId?: string, name?: string): CameraNode {
+    return addCamera(this, parentId, name);
   }
 
-  addNavArea(parentId?: string): NavAreaNode {
-    return addNavArea(this, parentId);
+  addNavArea(parentId?: string, name?: string): NavAreaNode {
+    return addNavArea(this, parentId, name);
   }
 
-  addNavAgent(parentId?: string): NavAgentNode {
-    return addNavAgent(this, parentId);
+  addNavAgent(parentId?: string, name?: string): NavAgentNode {
+    return addNavAgent(this, parentId, name);
   }
 
-  addFsmRunner(parentId?: string): FsmRunnerNode {
-    return addFsmRunner(this, parentId);
+  addFsmRunner(parentId?: string, name?: string): FsmRunnerNode {
+    return addFsmRunner(this, parentId, name);
   }
 
-  addBtRunner(parentId?: string): BtRunnerNode {
-    return addBtRunner(this, parentId);
+  addBtRunner(parentId?: string, name?: string): BtRunnerNode {
+    return addBtRunner(this, parentId, name);
   }
 
-  addFog(kind: FogKind, parentId?: string): import("../prototype/derived/Primitives").FogNode {
-    return addFog(this, kind, parentId);
+  addFog(kind: FogKind, parentId?: string, name?: string): import("../prototype/derived/Primitives").FogNode {
+    return addFog(this, kind, parentId, name);
   }
 
-  addUICanvas(parentId?: string, defaults?: { designWidth: number; designHeight: number; scaleMode?: UIScaleMode }): UICanvasNode {
-    return addUICanvas(this, parentId, defaults);
+  addUICanvas(parentId?: string, defaults?: { designWidth: number; designHeight: number; scaleMode?: UIScaleMode }, name?: string): UICanvasNode {
+    return addUICanvas(this, parentId, defaults, name);
   }
 
-  addUIImage(parentId?: string): UIImageNode {
-    return addUIImage(this, parentId);
+  addUIImage(parentId?: string, name?: string): UIImageNode {
+    return addUIImage(this, parentId, name);
   }
 
-  addUIText(parentId?: string): UITextNode {
-    return addUIText(this, parentId);
+  addUIText(parentId?: string, name?: string): UITextNode {
+    return addUIText(this, parentId, name);
   }
 
-  addUIButton(parentId?: string): UIButtonNode {
-    return addUIButton(this, parentId);
+  addUIButton(parentId?: string, name?: string): UIButtonNode {
+    return addUIButton(this, parentId, name);
   }
 
-  addUILayout(parentId?: string): UILayoutNode {
-    return addUILayout(this, parentId);
+  addUILayout(parentId?: string, name?: string): UILayoutNode {
+    return addUILayout(this, parentId, name);
   }
 
-  addEmptyGroup(parentId?: string): Node {
-    return addEmptyGroup(this, parentId);
+  addEmptyGroup(parentId?: string, name?: string): Node {
+    return addEmptyGroup(this, parentId, name);
   }
 
-  addSkybox(kind: SkyboxKind, parentId?: string): import("../prototype/derived/Primitives").SkyboxNode {
-    return addSkybox(this, kind, parentId);
+  addSkybox(kind: SkyboxKind, parentId?: string, name?: string): import("../prototype/derived/Primitives").SkyboxNode {
+    return addSkybox(this, kind, parentId, name);
   }
 
-  addScriptNode(scriptRel: string, nodeType: { kind: string; label?: string }, parentId?: string): Node {
-    return addScriptNode(this, scriptRel, nodeType, parentId);
+  addScriptNode(scriptRel: string, nodeType: { kind: string; label?: string }, parentId?: string, name?: string): Node {
+    return addScriptNode(this, scriptRel, nodeType, parentId, name);
   }
 
   deleteSelected(): void {

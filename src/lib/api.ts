@@ -86,6 +86,9 @@ export const api = {
   scanAssets: (root: string) => invoke<AssetEntry[]>("scan_assets", { root }),
   scanAssetDb: (root: string) => invoke<MetaEntry[]>("scan_asset_db", { root }),
   readText: (root: string, rel: string) => invoke<string>("read_text", { root, rel }),
+  /** 把一次材质写入记入场景撤销栈（before/after 为 .mat 全文；undo/redo 由后端写回） */
+  scenePushMaterialEdit: (rel: string, before: string, after: string) =>
+    invoke<unknown>("scene_push_material_edit", { rel, before, after }),
   writeText: (root: string, rel: string, content: string) =>
     invoke<void>("write_text", { root, rel, content }),
   readAssetMeta: (root: string, rel: string) =>
@@ -217,6 +220,11 @@ export const api = {
    *  "build/web"），返回 base URL */
   startWebPreviewServer: (root: string, dir?: string) =>
     invoke<string>("start_web_preview_server", { root, dir }),
+  /** 预览服务器状态（ready 为真实 TCP 探测；外部 Agent 据此等待就绪） */
+  previewStatus: () =>
+    invoke<{ running: boolean; ready: boolean; url?: string; port?: number; dir?: string }>(
+      "preview_status",
+    ),
   /** 停止网页预览本地静态服务（释放端口） */
   stopWebPreview: () => invoke<void>("stop_web_preview"),
   /** 构建导出：打包选中场景 + 引用资产 + 网页运行时到 <root>/build/<channel>/

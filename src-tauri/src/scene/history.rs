@@ -5,7 +5,11 @@
 // ---------------------------------------------------------------------------
 
 use super::graph::{Graph, GraphChange};
-use super::model::{NodeData, TransformData};
+use super::model::{JsonMap, NodeData, TransformData};
+use serde_json::Value;
+use std::path::Path;
+
+mod external;
 
 /// 批量重挂目标（多选拖拽一次撤销）
 #[derive(Clone, Debug)]
@@ -62,6 +66,18 @@ pub enum CmdKind {
     /// 批量整节点属性补丁（多选批量编辑一次撤销）
     PatchNodes {
         items: Vec<(String, NodeData, NodeData)>,
+    },
+    /// 引擎管理资产整文替换（.mat）：文件已由写入口落盘，undo/redo 由
+    /// 场景命令执行器写回 before/after 文本（不参与图变更）。
+    AssetWrite {
+        rel: String,
+        before: String,
+        after: String,
+    },
+    /// 场景 settings 整体替换（信封字段；undo/redo 由执行器改信封）。
+    Settings {
+        before: Option<Value>,
+        after: Value,
     },
 }
 
@@ -156,6 +172,8 @@ impl SceneCmd {
                 }
                 changes
             }
+            // 外部副作用命令（资产/设置）由执行器写盘/改信封，不产生图变更
+            CmdKind::AssetWrite { .. } | CmdKind::Settings { .. } => Vec::new(),
         }
     }
 
@@ -209,6 +227,7 @@ impl SceneCmd {
                 }
                 changes
             }
+            CmdKind::AssetWrite { .. } | CmdKind::Settings { .. } => Vec::new(),
         }
     }
 }
@@ -242,6 +261,80 @@ impl History {
         Some((label, changes))
     }
 
+    /// 撤销（含外部副作用）：外部命令改信封/写盘，图命令走 graph；
+    /// 返回 (label, 图变更, 受影响资产, 还原后的 settings)。
+    #[allow(clippy::type_complexity)]
+    pub fn undo_full(
+        &mut self,
+        graph: &mut Graph,
+        envelope: &mut JsonMap,
+        root: Option<&Path>,
+    ) -> Result<Option<(String, Vec<GraphChange>, Vec<String>, Option<Value>)>, String> {
+        let Some(mut cmd) = self.undo_stack.pop() else {
+            return Ok(None);
+        };
+        if cmd.is_external() {
+            match cmd.apply_external(false, envelope, root) {
+                Ok(assets) => {
+                    let settings = if matches!(cmd.kind, CmdKind::Settings { .. }) {
+                        envelope.get("settings").cloned()
+                    } else {
+                        None
+                    };
+                    let label = cmd.label.clone();
+                    self.redo_stack.push(cmd);
+                    Ok(Some((label, Vec::new(), assets, settings)))
+                }
+                Err(e) => {
+                    // 写盘失败：命令放回栈顶，保持历史一致
+                    self.undo_stack.push(cmd);
+                    Err(e)
+                }
+            }
+        } else {
+            let changes = cmd.undo(graph);
+            let label = cmd.label.clone();
+            self.redo_stack.push(cmd);
+            Ok(Some((label, changes, Vec::new(), None)))
+        }
+    }
+
+    /// 重做（含外部副作用）
+    #[allow(clippy::type_complexity)]
+    pub fn redo_full(
+        &mut self,
+        graph: &mut Graph,
+        envelope: &mut JsonMap,
+        root: Option<&Path>,
+    ) -> Result<Option<(String, Vec<GraphChange>, Vec<String>, Option<Value>)>, String> {
+        let Some(mut cmd) = self.redo_stack.pop() else {
+            return Ok(None);
+        };
+        if cmd.is_external() {
+            match cmd.apply_external(true, envelope, root) {
+                Ok(assets) => {
+                    let settings = if matches!(cmd.kind, CmdKind::Settings { .. }) {
+                        envelope.get("settings").cloned()
+                    } else {
+                        None
+                    };
+                    let label = cmd.label.clone();
+                    self.undo_stack.push(cmd);
+                    Ok(Some((label, Vec::new(), assets, settings)))
+                }
+                Err(e) => {
+                    self.redo_stack.push(cmd);
+                    Err(e)
+                }
+            }
+        } else {
+            let changes = cmd.execute(graph);
+            let label = cmd.label.clone();
+            self.undo_stack.push(cmd);
+            Ok(Some((label, changes, Vec::new(), None)))
+        }
+    }
+
     pub fn clear(&mut self) {
         self.undo_stack.clear();
         self.redo_stack.clear();
@@ -259,6 +352,11 @@ impl History {
         self.undo_stack.len()
     }
 
+    /// 历史总条目数（undo + redo 两栈之和；depth 只表示可撤销位置）
+    pub fn entries(&self) -> usize {
+        self.undo_stack.len() + self.redo_stack.len()
+    }
+
     pub fn undo_label(&self) -> Option<&str> {
         self.undo_stack.last().map(|c| c.label.as_str())
     }
@@ -273,169 +371,4 @@ impl History {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn mesh_cmd(id: &str, parent: Option<&str>) -> SceneCmd {
-        let node: NodeData = serde_json::from_value(json!({
-            "type": "meshNode", "id": id, "name": id, "parentId": parent,
-            "source": "primitive", "geometry": "box"
-        }))
-        .unwrap();
-        SceneCmd {
-            label: format!("Add {id}"),
-            kind: CmdKind::Add { node },
-        }
-    }
-
-    #[test]
-    fn add_undo_redo() {
-        let mut g = Graph::default();
-        let mut h = History::default();
-
-        h.push(mesh_cmd("root", None));
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-        h.push(mesh_cmd("a", Some("root")));
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-        assert!(g.contains("a"));
-
-        h.undo(&mut g).unwrap();
-        assert!(!g.contains("a") && g.contains("root"));
-
-        h.redo(&mut g).unwrap();
-        assert!(g.contains("a"));
-        assert_eq!(g.get("a").unwrap().parent_id.as_deref(), Some("root"));
-    }
-
-    #[test]
-    fn remove_batch_undo_restores_in_reverse() {
-        let mut g = Graph::default();
-        let mut h = History::default();
-        for (id, parent) in [("root", None), ("a", Some("root")), ("b", Some("root"))] {
-            h.push(mesh_cmd(id, parent));
-            h.undo_stack.last_mut().unwrap().execute(&mut g);
-        }
-
-        let mut cmd = SceneCmd {
-            label: "Remove".into(),
-            kind: CmdKind::RemoveNodes {
-                ids: vec!["a".into(), "b".into()],
-                captured: vec![],
-                done: false,
-            },
-        };
-        cmd.execute(&mut g);
-        assert!(!g.contains("a") && !g.contains("b"));
-        h.push(cmd);
-
-        h.undo(&mut g).unwrap();
-        assert!(g.contains("a") && g.contains("b"));
-        h.redo(&mut g).unwrap();
-        assert!(!g.contains("a") && !g.contains("b"));
-    }
-
-    #[test]
-    fn transform_undo_restores_before() {
-        let mut g = Graph::default();
-        let mut h = History::default();
-        h.push(mesh_cmd("n", None));
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-        assert!(g.contains("n"));
-
-        let before = g.get("n").unwrap().transform.clone();
-        let after = TransformData {
-            position: super::super::model::Vec3Data {
-                x: 5.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            ..before.clone()
-        };
-        h.push(SceneCmd {
-            label: "Set Transform".into(),
-            kind: CmdKind::SetTransform {
-                id: "n".into(),
-                before: before.clone(),
-                after: after.clone(),
-            },
-        });
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-        assert_eq!(g.get("n").unwrap().transform.position.x, 5.0);
-
-        h.undo(&mut g).unwrap();
-        assert_eq!(g.get("n").unwrap().transform.position.x, before.position.x);
-    }
-
-    /// AddTree（prefab 实例化）：undo 摘除整棵子树，redo 按嵌套文档重建
-    #[test]
-    fn add_tree_undo_redo_roundtrip() {
-        let mut g = Graph::default();
-        let mut h = History::default();
-        h.push(mesh_cmd("root", None));
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-
-        let tree: NodeData = serde_json::from_value(json!({
-            "type": "node", "id": "t", "name": "T", "parentId": "root",
-            "children": [
-                { "type": "meshNode", "id": "t1", "name": "T1", "parentId": "t",
-                  "source": "primitive", "geometry": "box" }
-            ]
-        }))
-        .unwrap();
-        h.push(SceneCmd {
-            label: "Add Tree".into(),
-            kind: CmdKind::AddTree {
-                root: tree,
-                parent_id: Some("root".into()),
-            },
-        });
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-        assert!(g.contains("t") && g.contains("t1"));
-        assert_eq!(g.get("t").unwrap().parent_id.as_deref(), Some("root"));
-
-        h.undo(&mut g).unwrap();
-        assert!(!g.contains("t") && !g.contains("t1"));
-
-        h.redo(&mut g).unwrap();
-        assert!(g.contains("t") && g.contains("t1"));
-        assert_eq!(g.get("t1").unwrap().parent_id.as_deref(), Some("t"));
-    }
-
-    /// PatchNodes（多选批量编辑）：一次撤销/重做回填全部节点
-    #[test]
-    fn patch_nodes_undo_redo_batch() {
-        let mut g = Graph::default();
-        let mut h = History::default();
-        for id in ["a", "b"] {
-            h.push(mesh_cmd(id, None));
-            h.undo_stack.last_mut().unwrap().execute(&mut g);
-        }
-
-        let snapshot = |g: &Graph, id: &str| g.get(id).unwrap().clone();
-        let items: Vec<(String, NodeData, NodeData)> = ["a", "b"]
-            .iter()
-            .map(|id| {
-                let before = snapshot(&g, id);
-                let mut after = before.clone();
-                after.name = format!("{id}-renamed");
-                (id.to_string(), before, after)
-            })
-            .collect();
-        h.push(SceneCmd {
-            label: "Batch Patch".into(),
-            kind: CmdKind::PatchNodes { items },
-        });
-        h.undo_stack.last_mut().unwrap().execute(&mut g);
-        assert_eq!(g.get("a").unwrap().name, "a-renamed");
-        assert_eq!(g.get("b").unwrap().name, "b-renamed");
-
-        h.undo(&mut g).unwrap();
-        assert_eq!(g.get("a").unwrap().name, "a");
-        assert_eq!(g.get("b").unwrap().name, "b");
-
-        h.redo(&mut g).unwrap();
-        assert_eq!(g.get("a").unwrap().name, "a-renamed");
-        assert_eq!(g.get("b").unwrap().name, "b-renamed");
-    }
-}
+mod tests;

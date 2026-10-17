@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { api } from "../../../lib/api";
 import { isTauri } from "../../../lib/tauri-env";
 import {
   devtools,
@@ -27,6 +28,9 @@ import {
   mcpStdioCommandOf,
   mcpConfigJson,
   mcpStdioConfigJson,
+  tcpEndpointOf,
+  discoveryFilePath,
+  devtoolsHandoffText,
 } from "../../lib/devtools/devtools-format";
 
 const emit = defineEmits<{
@@ -93,6 +97,20 @@ const mcpStdioCommand = computed(() => mcpStdioCommandOf(devtools.info));
 const mcpConfig = computed(() => mcpConfigJson(mcpEndpoint.value));
 const mcpStdioConfig = computed(() => mcpStdioConfigJson(mcpStdioCommand.value, devtools.port));
 
+/** 控制服务器 TCP 端点（一键复制/转发用） */
+const tcpEndpoint = computed(() => tcpEndpointOf(devtools.info, devtools.port));
+
+// 端口发现文件：配置根目录由后端给出（便携版 exe 旁 data/，否则系统配置目录）。
+// 外部 Agent / 自动化读它即可在端口被占用回退随机端口后仍能连上。
+const configRoot = ref("");
+const discoveryPath = computed(() => discoveryFilePath(configRoot.value));
+const handoffText = computed(() =>
+  devtoolsHandoffText({
+    tcp: tcpEndpoint.value,
+    discovery: discoveryPath.value,
+  }),
+);
+
 /** 启用/停用本地控制服务器（复选框；执行端在编辑器窗口，启停命令全局生效） */
 async function toggleDevService(e: Event): Promise<void> {
   const on = (e.target as HTMLInputElement).checked;
@@ -149,6 +167,16 @@ let logTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void refreshRecentCalls();
   logTimer = setInterval(() => void refreshRecentCalls(), 3000);
+  if (inTauri) {
+    void api
+      .devAppDirs()
+      .then((dirs) => {
+        configRoot.value = dirs.find((d) => d[0] === "配置目录")?.[1] ?? "";
+      })
+      .catch(() => {
+        // 目录查询失败只影响发现文件路径展示，不影响控制服务器本身
+      });
+  }
 });
 onBeforeUnmount(() => clearInterval(logTimer));
 </script>
@@ -199,13 +227,38 @@ onBeforeUnmount(() => clearInterval(logTimer));
                 : "启用后外部工具可经本地 TCP / MCP 操控编辑器"
             }}
           </span>
+          <span v-if="devtools.enabled && devtools.info" class="devtools-forward">
+            <button title="复制 TCP 端点" @click="copyDevToolsText(tcpEndpoint)">
+              复制地址
+            </button>
+            <button
+              title="复制一段可直接粘贴给外部 Agent / 自动化的 TCP 接入说明（直连指令集，不走 MCP）"
+              @click="copyDevToolsText(handoffText)"
+            >
+              复制接入说明
+            </button>
+          </span>
+        </div>
+        <div
+          v-if="devtools.enabled && devtools.info && discoveryPath"
+          class="devtools-discovery"
+        >
+          <span class="dim">端口发现文件</span>
+          <span
+            class="devtools-code mono"
+            title="点击复制（外部自动化读取它即可自动发现端口）"
+            @click="copyDevToolsText(discoveryPath)"
+          >
+            {{ discoveryPath }}
+          </span>
         </div>
         <p v-if="devtools.error" class="devtools-err">{{ devtools.error }}</p>
         <p class="hint">
           应用启动时自动开启（默认端口 39100，被占用自动换随机端口）。
           协议：换行分隔 JSON（请求 {"id":1,"method":"editor.state","params":{}}），
           同一端口提供 MCP streamable-http 端点 /mcp。命令由编辑器窗口按下方
-          「工具权限」执行；在此停用后本次运行不再自动开启。
+          「工具权限」执行；在此停用后本次运行不再自动开启。外部 Agent /
+          自动化可直接读取上方发现文件自动获取端口，无需手工填写地址。
         </p>
       </template>
       <p v-else class="hint">当前为浏览器直开环境，控制服务器不可用。</p>
@@ -347,5 +400,30 @@ onBeforeUnmount(() => clearInterval(logTimer));
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 一键转发：端点/接入说明复制按钮组（贴在服务状态行后） */
+.devtools-forward {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 端口发现文件：外部自动化据此自动发现端口 */
+.devtools-discovery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 8px;
+  font-size: 12px;
+
+  .devtools-code {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
 }
 </style>

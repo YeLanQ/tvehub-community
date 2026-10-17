@@ -149,8 +149,23 @@ fn resolve_shader_kind(root: &std::path::Path, shader: &str, legacy: &str) -> St
     if legacy.is_empty() { "physical".to_string() } else { legacy.to_string() }
 }
 
+/// 解析失败的诊断信息（首个错误：JSON 语法/根类型/$type 标记）
+fn material_parse_error(text: &str) -> String {
+    match serde_json::from_str::<Value>(text) {
+        Err(e) => format!("JSON 解析失败（第 {} 行第 {} 列）: {e}", e.line(), e.column()),
+        Ok(v) => match v.as_object() {
+            None => "根节点应为 JSON 对象".to_string(),
+            Some(o) => match o.get("$type").and_then(Value::as_str) {
+                Some("material") => "材质结构不完整（缺少可识别字段）".to_string(),
+                Some(other) => format!("$type 应为 \"material\"，实际为 {other:?}"),
+                None => "缺少 $type: \"material\" 标记（不是材质文档）".to_string(),
+            },
+        },
+    }
+}
+
 /// 读取并解析 .mat 材质资产；shader 引用就地解析为渲染分支 kind。
-/// 不存在/非材质文档返回 null（前端回退默认参数）。
+/// 文件不存在返回 null；存在但解析失败返回 Err（区分缺失与格式损坏）。
 #[tauri::command]
 pub async fn material_read(
     root: String,
@@ -158,13 +173,23 @@ pub async fn material_read(
 ) -> Result<Option<MaterialDoc>, String> {
     let root = std::path::PathBuf::from(&root);
     match read_material_text(&root, &rel) {
-        Ok(text) => Ok(parse_material_doc(&text).map(|mut doc| {
-            if !doc.shader.is_empty() {
-                doc.material_type = resolve_shader_kind(&root, &doc.shader, &doc.material_type);
+        Ok(text) => match parse_material_doc(&text) {
+            Some(mut doc) => {
+                if !doc.shader.is_empty() {
+                    doc.material_type = resolve_shader_kind(&root, &doc.shader, &doc.material_type);
+                }
+                Ok(Some(doc))
             }
-            doc
-        })),
-        Err(_) => Ok(None),
+            None => Err(format!("材质解析失败 '{rel}': {}", material_parse_error(&text))),
+        },
+        Err(e) => {
+            // 文件不存在 → null（调用方按缺失处理）；其它 IO 错误如实上报
+            if e.contains("os error 2") || e.to_ascii_lowercase().contains("not found") {
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        }
     }
 }
 

@@ -35,10 +35,37 @@ pub(crate) fn write_export_dir(
         write_export_file(&staging, rel, bytes)?;
     }
 
-    let backup = out.with_extension("old");
+    let mut backup = out.with_extension("old");
     if out.exists() {
-        let _ = fs::remove_dir_all(&backup);
-        fs::rename(out, &backup).map_err(|e| format!("换出旧导出目录失败: {}", e))?;
+        // 旧目录换出：备份名可能被上一轮残留/索引器占用（Windows os error 183
+        // 不允许 rename 到已存在目录），先清理并短重试，仍失败改用唯一备份名。
+        let mut moved = false;
+        let mut last_err = String::new();
+        for attempt in 0..4 {
+            let target = if attempt < 3 {
+                backup.clone()
+            } else {
+                out.with_extension(format!("old-{}", std::process::id()))
+            };
+            let _ = fs::remove_dir_all(&target);
+            match fs::rename(out, &target) {
+                Ok(()) => {
+                    backup = target;
+                    moved = true;
+                    break;
+                }
+                Err(e) => {
+                    last_err = e.to_string();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                }
+            }
+        }
+        if !moved {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(format!(
+                "换出旧导出目录失败: {last_err}（目录可能被预览服务/索引器占用）"
+            ));
+        }
     }
     // Windows 下批量新写文件后立即整目录换名，偶发被杀软/索引器的瞬时句柄
     // 拒绝（os error 5）：短重试消化瞬时锁；持续失败多为外部进程长期持有

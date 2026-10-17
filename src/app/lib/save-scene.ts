@@ -15,8 +15,9 @@ export async function saveCurrentSceneToMain(): Promise<void> {
   // 保存曾丢尾部 2-3 条操作）。
   const { engine } = getEditorStore();
   if (!engine.isDisposed()) await engine.graph.quiesceWrites();
+  // 写盘前打标：watcher 可能先于 IPC 返回送达，写后才标记会漏掉这次自写
+  markSceneSelfWrite();
   await sceneApi.save();
-  // 打自写标记：watcher 会把自己的保存推回 fs-changed，预览/构建先保存再切
-  // 视图，不标记会被"外部修改自动重载"拽回场景视图
+  // 再补一次：覆盖写盘后 watcher 去抖窗口内的推送
   markSceneSelfWrite();
 }
