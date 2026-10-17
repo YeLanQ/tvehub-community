@@ -58,3 +58,5 @@ v1.0.0 把作品送出编辑器：微信小游戏一键直出，真机实测跑�
 内置用户文档位于 `public/docs/`（首页「开发者服务」或文档窗口可直接查看），含编辑器手册、SDK 教程与**自动生成的全量 API 参考**（`public/docs/sdk/api.md`）；站内支持 `Ctrl+K` 搜索文档章节与 API。
 
 项目结构、快速开始、质量检查等完整说明见 [README_KP_2.md](README_KP_2.md)（与前代通用）。
+
+架构设计文档（开源社区分支）见 [architecture/README.md](architecture/README.md)：内置助手、TCP 指令集、双协议、原子命令中心、权限门、渲染层抽象，以及与市面方案的差异与创新。
