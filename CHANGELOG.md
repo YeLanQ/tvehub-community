@@ -6,9 +6,10 @@
 - `pnpm version:bump auto` 按未发布提交的类型自动递增版本（feat→minor、fix→patch、
   破坏性→major，0.x 阶段破坏性按 semver 惯例只升 minor），并把新版本段写进本文件。
 
-## v1.1.0（未发布）
+## v1.1.0（2026-10-18）
 
 ### 新特性
+- **identity**: 社区版改名 TvEHub Community 与名称版本门禁
 - **runtime**: 同步商业版批处理与性能优化
 - **devtools**: 同步 TCP 直连与指令集校验/撤销事件
 
@@ -34,6 +35,7 @@
 - **architecture**: 新增架构文档库与差异创新篇
 
 ### 其他
+- **license**: 补 Rust 依赖第三方声明管线与 NOTICES
 - **docs**: docs 撤子模块改内嵌——社区文档随 base 库同步版本，不再外链（docs/ 忽略规则锚定根目录）
 - **docs**: 社区文档库切分——public/docs 改指 TvEHub-Docs-Community（孤儿历史，内容=eca8ece 基线）
 - **repo**: public/licenses 行尾锁 LF，根治生成物行尾幻影 M
