@@ -49,10 +49,49 @@ interface AssetShimWindow {
   __tveAssetShimInstalled?: boolean;
 }
 
+/** 安全解码（非法百分号序列原样返回，不抛错） */
+function decodePath(p: string): string {
+  try {
+    return decodeURIComponent(p);
+  } catch {
+    return p;
+  }
+}
+
+/** 资源 URL → 归档条目键候选（部署形态无关，命中任一即可）。
+ *  - 服务器根部署：整段 pathname；
+ *  - 子路径部署：入口页目录之后的相对路径；
+ *  - `file://` 双击打开：入口页目录是完整磁盘路径。两侧必须都先解码再比较——
+ *    入口页路径含中文/空格时 location.pathname 是百分号编码、资源 pathname 解码后
+ *    是原字符，编码态 base 前缀永不匹配（曾致打开产物贴图全 404、模型白模）。
+ *  跨源地址返回空数组（不接管）。 */
+export function assetKeyCandidates(rawUrl: string, pageHref: string): string[] {
+  let u: URL;
+  let page: URL;
+  try {
+    u = new URL(rawUrl, pageHref);
+    page = new URL(pageHref);
+  } catch {
+    return [];
+  }
+  const isFile = u.protocol === "file:";
+  if (!isFile && u.origin !== page.origin) return [];
+  const path = decodePath(u.pathname);
+  const pagePath = decodePath(page.pathname);
+  const base = pagePath.replace(/[^/]*$/, "");
+  const keys = [path.replace(/^\/+/, "")];
+  if (base && path.startsWith(base)) {
+    keys.push(path.slice(base.length).replace(/^\/+/, ""));
+  }
+  // 编码态键兜底（归档键理论上都是解码后的原始路径，防御性保留）
+  const encoded = u.pathname.replace(/^\/+/, "");
+  if (!keys.includes(encoded)) keys.push(encoded);
+  return keys.filter((k) => k.length > 0);
+}
+
 /** 安装 fetch 拦截：同源相对路径命中内存资产 → Response；其余透传原生 fetch。
  *  命中项每次返回数据副本（Response 消费后不可复用）。
- *  key 匹配两次尝试：整段 pathname（服务器根部署）与入口页目录的相对路径
- *  （子路径部署 / file:// 双击打开——此时 pathname 是完整磁盘路径）。 */
+ *  key 匹配见 assetKeyCandidates（服务器根 / 子路径部署 / file:// 双击三种形态）。 */
 export function installAssetShim(map: AssetArchiveMap): void {
   const w = window as Window & AssetShimWindow;
   if (w.__tveAssetShimInstalled) return;
@@ -70,16 +109,9 @@ export function installAssetShim(map: AssetArchiveMap): void {
               ? input.url
               : undefined;
       if (typeof url === "string" && !init?.body) {
-        const u = new URL(url, location.href);
-        if (u.origin === location.origin || u.protocol === "file:") {
-          const path = decodeURIComponent(u.pathname);
-          const keys = [path.replace(/^\/+/, "")];
-          const base = location.pathname.replace(/[^/]*$/, "");
-          if (path.startsWith(base)) keys.push(path.slice(base.length).replace(/^\/+/, ""));
-          for (const key of keys) {
-            const hit = map.get(key);
-            if (hit) return Promise.resolve(new Response(hit.slice()));
-          }
+        for (const key of assetKeyCandidates(url, location.href)) {
+          const hit = map.get(key);
+          if (hit) return Promise.resolve(new Response(hit.slice()));
         }
       }
     } catch {

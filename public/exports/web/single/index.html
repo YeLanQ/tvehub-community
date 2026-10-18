@@ -55,10 +55,7 @@
         var el = document.getElementById("error");
         if (!el || el.classList.contains("visible")) return;
         el.textContent =
-          "预览运行失败
-
-启动超时（15 秒）：运行时代码未执行或首帧未渲染。
-请打开浏览器开发者工具查看控制台（常见原因：引擎产物缺失、WebGL 不可用、资产 404）。";
+          "预览运行失败\n\n启动超时（15 秒）：运行时代码未执行或首帧未渲染。\n请打开浏览器开发者工具查看控制台（常见原因：引擎产物缺失、WebGL 不可用、资产 404）。";
         el.classList.add("visible");
       }, 15000);
     </script>

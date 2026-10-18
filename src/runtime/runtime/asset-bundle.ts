@@ -2,7 +2,7 @@
 // loadBundle(url) 加载并解压 → get(path) 取资源字节 → unload() 释放。
 // 支持 gzip 归档 / 内联 base64 / 内联 base64+gzip / 条目 Map 四种构造方式。
 
-import { parseArchive, gunzip, base64ToBytes } from "./pak";
+import { parseArchive, gunzip, base64ToBytes, assetKeyCandidates } from "./pak";
 
 /** AssetBundle：内存资源包，按相对路径索引字节表。 */
 export class AssetBundle {
@@ -55,27 +55,17 @@ export class AssetBundle {
     return data ? data.slice() : null;
   }
 
-  /** 尝试多种路径归一化取资源（与 installAssetShim 同策略）。
+  /** 尝试多种路径归一化取资源（与 installAssetShim 同策略：共用
+   *  assetKeyCandidates——服务器根/子路径部署/file:// 双击的编码差异在单处收敛）。
    *  模块传相对路径 "a/b.glb" → 尝试 "a/b.glb" + URL 解析后的 pathname 变体。 */
   tryGet(url: string): Uint8Array | null {
     // 1) 原样
     let hit = this._entries.get(url);
     if (hit) return hit.slice();
     // 2) URL 归一化（与 installAssetShim 同逻辑）
-    try {
-      const u = new URL(url, location.href);
-      const path = decodeURIComponent(u.pathname);
-      const key1 = path.replace(/^\/+/, "");
-      hit = this._entries.get(key1);
+    for (const key of assetKeyCandidates(url, typeof location !== "undefined" ? location.href : "")) {
+      hit = this._entries.get(key);
       if (hit) return hit.slice();
-      const base = location.pathname.replace(/[^/]*$/, "");
-      if (path.startsWith(base)) {
-        const key2 = path.slice(base.length).replace(/^\/+/, "");
-        hit = this._entries.get(key2);
-        if (hit) return hit.slice();
-      }
-    } catch {
-      /* URL 解析失败 */
     }
     // 3) 去除 ./ 前缀
     if (url.startsWith("./")) {
