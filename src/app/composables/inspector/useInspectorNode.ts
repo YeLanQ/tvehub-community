@@ -161,6 +161,14 @@ export function useInspectorNode(): InspectorNodeApi {
         }, label);
         break;
       }
+      case "Set Runtime Dynamic": {
+        // 运行期动态：不参与批处理烘焙（布尔收敛，非法载荷不动）
+        const flag = value === true;
+        commit((m) => {
+          (m as MeshNode).runtimeDynamic = flag;
+        }, flag ? "标记运行期动态" : "取消运行期动态");
+        break;
+      }
       case "Import Mesh Data": {
         // 数据化网格：载荷经 parseMeshData 收敛（非法丢弃不提交）
         const payload = parseMeshData(value);

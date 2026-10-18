@@ -26,6 +26,8 @@ export interface NodeJson {
   model?: string;
   active?: boolean;
   visible?: boolean;
+  /** 运行期动态（meshNode）：true = 不参与实例化/合并烘焙，脚本位姿/可见性全程有效 */
+  runtimeDynamic?: boolean;
   /** 节点变换（position/rotation/scale 各 {x,y,z}，rotation 度制） */
   transform?: Record<string, unknown>;
   /** 节点设置（逻辑运行器/粒子等按需读取） */

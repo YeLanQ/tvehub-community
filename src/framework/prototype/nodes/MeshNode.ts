@@ -41,6 +41,13 @@ export interface MeshNodeInit extends NodeInit {
   boneBindings?: BoneBindingSpec[];
   /** 模型内嵌材质覆盖表（source=model 时有效；键=内嵌材质名，值=.mat 资产 rel） */
   modelMaterialOverrides?: Record<string, string>;
+  /**
+   * 运行期动态（默认 false）：勾选后该节点不参与预览/导出的实例化/合并烘焙，
+   * 供运行期脚本驱动位姿/可见性的物体使用（子弹、可破坏物等）。
+   * 未勾选且被烘焙的节点：脚本写入经烘焙映射同步到实例副本（见 runtime batching），
+   * 但「合并」路径的成员无法逐节点同步——需要脚本驱动的物体应勾选本项。
+   */
+  runtimeDynamic?: boolean;
 }
 
 /** 网格节点能力接口：网格来源（基元/模型）+ 材质资产引用 */
@@ -101,6 +108,8 @@ export class MeshNode extends Node implements IMeshNode, IAnimatable {
    * 引擎在模型实例挂载/属性变更时应用（编辑器材质经 MaterialManager 解析）。
    */
   modelMaterialOverrides: Record<string, string> = {};
+  /** 运行期动态：不参与批处理烘焙（默认 false；true 才写入场景文件保持字节兼容） */
+  runtimeDynamic = false;
 
   constructor(init: MeshNodeInit = {}) {
     super(init);
@@ -116,6 +125,7 @@ export class MeshNode extends Node implements IMeshNode, IAnimatable {
     this.modelMaterialOverrides = init.modelMaterialOverrides
       ? cloneModelMaterialOverrides(init.modelMaterialOverrides)
       : this.modelMaterialOverrides;
+    this.runtimeDynamic = init.runtimeDynamic ?? this.runtimeDynamic;
   }
 
   override clone(): MeshNode {
@@ -137,6 +147,7 @@ export class MeshNode extends Node implements IMeshNode, IAnimatable {
       animGraph: this.animGraph ? cloneAnimGraph(this.animGraph) : null,
       boneBindings: cloneBoneBindings(this.boneBindings),
       modelMaterialOverrides: cloneModelMaterialOverrides(this.modelMaterialOverrides),
+      runtimeDynamic: this.runtimeDynamic,
     });
   }
 
@@ -155,6 +166,8 @@ export class MeshNode extends Node implements IMeshNode, IAnimatable {
     if (Object.keys(this.modelMaterialOverrides).length > 0) {
       target.modelMaterialOverrides = cloneModelMaterialOverrides(this.modelMaterialOverrides);
     }
+    // 运行期动态 true 才写入（旧场景文件保持字节兼容）
+    if (this.runtimeDynamic) target.runtimeDynamic = true;
   }
 
   protected override readOwnData(source: Record<string, unknown>): void {
@@ -178,5 +191,6 @@ export class MeshNode extends Node implements IMeshNode, IAnimatable {
     this.animGraph = parseAnimGraph(source.animGraph);
     this.boneBindings = parseBoneBindings(source.boneBindings);
     this.modelMaterialOverrides = parseModelMaterialOverrides(source.modelMaterialOverrides);
+    this.runtimeDynamic = source.runtimeDynamic === true;
   }
 }

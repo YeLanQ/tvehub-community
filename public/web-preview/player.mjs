@@ -309,8 +309,12 @@ async function main() {
 
   // 批处理优化：InstancedMesh + 静态几何合并（减少 DrawCall）。
   // nodes 全量传入：父链可动（祖先被图/动画引用、带脚本/刚体组件、导航代理）
-  // 时子网格会跟随父级移动，批处理需连同子树一起取消烘焙资格
-  const perfSettings = sceneData.settings && sceneData.settings.performance;
+  // 时子网格会跟随父级移动，批处理需连同子树一起取消烘焙资格。
+  // 开关来源：项目设置 performance 块（cfg.performance，项目设置面板写入）优先，
+  // 旧口径场景内嵌 settings.performance 兜底；本块只消费 instancing/batching
+  // 两键（frameRate/shadowUpdateInterval 仍读场景 settings，见下方帧循环）
+  const perfSettings =
+    (cfg && cfg.performance) || (sceneData.settings && sceneData.settings.performance);
   optimizeScene(scene, meshes, clips, {
     instancing: perfSettings ? perfSettings.instancing !== false : true,
     batching: perfSettings ? perfSettings.batching !== false : true,

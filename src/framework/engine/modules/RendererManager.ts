@@ -366,7 +366,8 @@ export class RendererManager {
   private loop = (): void => {
     if (this.paused) return;
     this.raf = requestAnimationFrame(this.loop);
-    // 活动内容钩子（动画/粒子/物理/导航/逻辑/着色器时间）：既驱动空闲降帧判定，
+    // 活动内容钩子（动画/粒子/物理/导航/逻辑；着色器 Hook 是时间型动画不算
+    // 活动，否则 GL 侧材质注册表恒真会把视口钉死全速）：既驱动空闲降帧判定，
     // 也驱动阴影图按需重画（见下方 shadowMap 门控）
     const contentActive = this.activityHooks.some((h) => h());
     const now = performance.now();

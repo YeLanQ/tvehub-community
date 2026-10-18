@@ -11,7 +11,10 @@
   管线**，`src/engine` 源码构建时内联进 stage.mjs）、nodes（buildSceneTree 场景树重建）、
   camera、shadow（refitShadowCameras）、mesh、model（GLTF/FBX 实例化）、material、
   textures、sky、fog/heightFog、terrain、particles、animation(+worker)/animclip、
-  audio、physics(+worker)、nav、logic、ui、batching（静态批处理）、layerpass
+  audio、physics(+worker)、nav、logic、ui、batching（静态批处理：基元/数据实例化+
+  合并、GLB 模型叶子实例化——同 GLB 共享模板几何/材质成组；烘焙按 owner 挂
+  batchBinding，tve entity 位姿/可见性写入同步到实例副本，`runtimeDynamic` 节点
+  整体豁免）、layerpass
   （Culling Mask 分 pass——已被 engine/rpi/layerSet 取代，产物保留无消费方）、
   lod、shader(+Hooks)、graph-kernel/runtime/behaviors、
   pak/asset-bundle/resource（打包资产 shim）、loaders/compressed

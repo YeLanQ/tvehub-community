@@ -95,10 +95,18 @@ class Entity {
   }
 
   get visible(): boolean {
+    // 被烘焙的节点（实例化批处理）：可见性由绑定承载（原对象恒显示、渲染的是实例副本）
+    const binding = this.__obj.userData?.batchBinding as { visible?: boolean } | undefined;
+    if (binding && typeof binding.visible === "boolean") return binding.visible;
     return this.__obj.visible === true;
   }
   set visible(value: boolean) {
-    this.__obj.visible = value === true;
+    // 烘焙节点转发到绑定（零缩放收拢隐藏实例）；未烘焙走原语义
+    const binding = this.__obj.userData?.batchBinding as
+      | { setVisible(v: boolean): void }
+      | undefined;
+    if (binding && typeof binding.setVisible === "function") binding.setVisible(value === true);
+    else this.__obj.visible = value === true;
   }
 
   get position(): Vec3 {

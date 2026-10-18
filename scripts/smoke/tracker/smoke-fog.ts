@@ -167,7 +167,10 @@ console.log("[4] 高度雾注入：chunk patch / ShaderLib 共享 uniform（head
   check("内置线性/指数公式原样保留", THREE.ShaderChunk.fog_fragment.includes(
     "float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );") &&
     THREE.ShaderChunk.fog_fragment.includes("float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );"));
-  check("fog_vertex 补世界 Y varying", /vFogWorldY = \( modelMatrix \* vec4\( position, 1\.0 \) \)\.y;/.test(THREE.ShaderChunk.fog_vertex));
+  check("fog_vertex 补世界 Y varying（含实例化分支）",
+    /vFogWorldY = \( modelMatrix \* instanceMatrix \* vec4\( position, 1\.0 \) \)\.y;/.test(THREE.ShaderChunk.fog_vertex) &&
+    /vFogWorldY = \( modelMatrix \* vec4\( position, 1\.0 \) \)\.y;/.test(THREE.ShaderChunk.fog_vertex) &&
+    /#ifdef USE_INSTANCING/.test(THREE.ShaderChunk.fog_vertex));
   check("fog_pars_fragment 声明 uFogHeight", /uniform vec3 uFogHeight;/.test(THREE.ShaderChunk.fog_pars_fragment));
 
   // 共享 uniform：全部含雾模板引用同一对象，clone 后仍按引用穿透（核心机制）
@@ -224,7 +227,8 @@ console.log("[5] 菜单映射与契约：「雾」分组三类型 / 播放器接
 
   check("runtime/fog.mjs 收敛 heightY/heightFalloff", /heightY/.test(runtimeFog) && /heightFalloff/.test(runtimeFog));
   check("runtime/heightFog.mjs 提供 chunk patch 与 WebGPU 节点", /ensureHeightFogChunk/.test(runtimeHeight) &&
-    /applyHeightFogNodeWebGPU/.test(runtimeHeight) && /scene\.fogNode/.test(runtimeHeight));
+    /applyHeightFogNodeWebGPU/.test(runtimeHeight) && /scene\.fogNode/.test(runtimeHeight) &&
+    /instanceMatrix/.test(runtimeHeight));
   check("player.mjs 先于 buildSceneTree 安装 chunk patch",
     player.indexOf("ensureHeightFogChunk()") >= 0 &&
     player.indexOf("ensureHeightFogChunk()") < player.indexOf("buildSceneTree(rootJson"));

@@ -10,7 +10,7 @@ import { GizmoController } from "./modules/GizmoController";
 import { TerrainPaintController } from "./modules/TerrainPaintController";
 import { loadParticleNodeMaterialFactory } from "../particles";
 import { loadNodeMaterialBackend, setNodeMaterialBackend } from "../material/nodeMaterialBackend";
-import { hookMaterialCount, tickAllHookTime } from "../material/shaderHooks";
+import { tickAllHookTime } from "../material/shaderHooks";
 import { tickAllNodeHookTime } from "../material/nodeMaterialBackend";
 import { handleGraphChange, onSelectionChanged, onViewportMouseDown, syncGizmoTransformToNode } from "./events";
 import { isUIPositionManaged } from "./viewportQuery";
@@ -55,7 +55,9 @@ export async function mountEditorEngine(
   engine.renderer.addActivityHook(() => engine.physics.isSimulatingActive());
   engine.renderer.addActivityHook(() => engine.nav.hasActiveAgents());
   engine.renderer.addActivityHook(() => engine.logic.hasRunning());
-  engine.renderer.addActivityHook(() => hookMaterialCount() > 0);
+  // 注意：着色器 Hook 材质不作为活动信号（GL 侧注册表只要有 Hook 材质就恒真，
+  // 会把视口钉死 60fps；WebGPU 侧走节点 uniform 天然不计入，行为才是一致的空闲
+  // 降帧）。Hook 是时间型动画，归入空闲档：时间按真实 dt 累进不丢，交互即刻回全速。
   engine.events.on("select:changed", () => engine.renderer.markActivity());
   engine.renderer.setRenderCb(() => {
     // 帧间隔（Timer.update 每帧一次；getDelta 取值在本帧内多次调用结果一致）

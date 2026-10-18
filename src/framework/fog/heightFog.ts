@@ -17,7 +17,9 @@
 // 已知取舍（项目内均不成立或可接受）：
 // - 世界 Y 取 modelMatrix * position（蒙皮前），蒙皮网格为近似值；
 //   精灵着色器作用域没有 transformed，position 是唯一全量可用的顶点源；
-// - InstancedMesh/BatchedMesh 未含实例矩阵（项目当前没有这两种渲染路径）。
+// - InstancedMesh 已按 USE_INSTANCING 宏分支补乘实例矩阵（运行时批处理管线
+//   烘焙的 InstancedMesh 世界变换全在 instanceMatrix，本体 modelMatrix 恒等）；
+//   BatchedMesh 未处理（项目当前没有该渲染路径）。
 // ---------------------------------------------------------------------------
 
 import * as THREE from "three";
@@ -72,8 +74,19 @@ export function ensureHeightFogChunk(): void {
 	vFogDepth = - mvPosition.z;
 
 	// 世界海拔（雾带高度判定用）：position 为 prefix 全量可用属性（精灵着色器
-	// 无 transformed / 蒙皮 morph 均可回退到此），矩阵乘法在顶点阶段一次完成
-	vFogWorldY = ( modelMatrix * vec4( position, 1.0 ) ).y;
+	// 无 transformed / 蒙皮 morph 均可回退到此），矩阵乘法在顶点阶段一次完成。
+	// 实例化网格（运行时批处理烘焙副本）的世界变换在 instanceMatrix——three
+	// 在 USE_INSTANCING 下经 prefix 声明该 attribute，按宏分支补乘；非实例化
+	// 材质不定义该宏，生成的 GLSL 与无分支时逐字一致
+	#ifdef USE_INSTANCING
+
+		vFogWorldY = ( modelMatrix * instanceMatrix * vec4( position, 1.0 ) ).y;
+
+	#else
+
+		vFogWorldY = ( modelMatrix * vec4( position, 1.0 ) ).y;
+
+	#endif
 
 #endif
 `;

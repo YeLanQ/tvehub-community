@@ -42,9 +42,11 @@
 
 写 `project.config.json`：基础信息（名称/版本/描述/主场景/入口脚本）；显示与运行
 （设计分辨率/方向/缩放模式/HDR·LDR/抗锯齿 MSAA 0·2·4·8/渲染后端 WebGPU·WebGL
-——改后端重载视口生效）；物理（启用开关/ammo·jolt·rapier/重力 XYZ——即时生效）；
-资源（Draco 压缩/Basis 纹理压缩）；标签与 32 层表（添加层占最低空闲索引，
-删除 = 清空索引）。
+——改后端重载视口生效；实例化批处理 InstancedMesh/静态几何合并两开关——写入
+`performance` 块，仅作用预览/发布产物的 DrawCall 优化，保存后刷新预览或重新构建
+生效，带脚本/物理组件、被动画或脚本图引用的网格自动排除）；物理（启用开关/
+ammo·jolt·rapier/重力 XYZ——即时生效）；资源（Draco 压缩/Basis 纹理压缩）；
+标签与 32 层表（添加层占最低空闲索引，删除 = 清空索引）。
 
 ## 操作面：首页（HomeView，7 分区）
 
@@ -65,5 +67,6 @@ repos 目录，code/effect 原型可增删改，只读分类仅打开目录）�
 - 构建/预览 IPC 调用点：`src/app/lib/build/run.ts`、WebPreviewPanel.vue
   （契约见 `tve-api-usage` facade-tasks-build.md，含浏览器分支示范 spec）。
 - 项目设置解析收敛真实落点：`src/app/stores/project.ts:135 applyProjectConfig`
-  （缺字段回默认）——无 spec，推荐示范见 facade-projects.md 测试例段。
+  （缺字段回默认）；草稿↔配置序列化纯函数 spec：`src/app/lib/project-settings.spec.ts`
+  （performance 批处理开关往返）。
 - 产物链路回归：`pnpm test:regression:core`（P0 全绿，含 runtime 模块导出面）。

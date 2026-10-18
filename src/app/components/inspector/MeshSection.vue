@@ -65,6 +65,11 @@ function onModelChange(e: Event): void {
   const value = (e.target as HTMLSelectElement).value;
   emit("update", "Set Model", value);
 }
+
+/** 运行期动态：不参与批处理烘焙（子弹/可破坏物等运行期脚本驱动物体的逃生口） */
+function onRuntimeDynamicChange(e: Event): void {
+  emit("update", "Set Runtime Dynamic", (e.target as HTMLInputElement).checked);
+}
 </script>
 
 <template>
@@ -76,6 +81,19 @@ function onModelChange(e: Event): void {
         <option value="model">模型（Model）</option>
         <option value="data">数据（Data）</option>
       </select>
+    </div>
+
+    <div class="field">
+      <label
+        title="勾选后不参与预览/导出的实例化与合并烘焙；用于子弹、可破坏物等运行期脚本驱动的物体"
+      >
+        运行期动态
+      </label>
+      <input
+        type="checkbox"
+        :checked="node.runtimeDynamic === true"
+        @change="onRuntimeDynamicChange($event)"
+      />
     </div>
 
     <template v-if="node.source === 'primitive'">

@@ -45,6 +45,10 @@ export interface ProjectDraft {
   physicsEnabled: boolean;
   /** 重力向量（项目级） */
   physicsGravity: { x: number; y: number; z: number };
+  /** 实例化批处理（预览/发布产物：相同几何+材质的静态网格合并为一个 InstancedMesh） */
+  instancingEnabled: boolean;
+  /** 静态几何合并（预览/发布产物：同材质不同几何的静态网格烘焙合并为单个网格） */
+  batchingEnabled: boolean;
   /** 项目标签列表（不含内置 Untagged，节点 tag 自由文本可不在列表） */
   tags: string[];
   /** 层表（稠密 32 项，下标即层索引，空串 = 未定义；index 0 恒为内置 Default） */
@@ -126,6 +130,8 @@ export function defaultDraft(): ProjectDraft {
     physicsBackend: DEFAULT_PHYSICS_BACKEND,
     physicsEnabled: false,
     physicsGravity: { x: 0, y: -9.81, z: 0 },
+    instancingEnabled: true,
+    batchingEnabled: true,
     tags: [],
     layers: parseLayerTable(undefined),
     dracoCompressionEnabled: false,
@@ -133,8 +139,9 @@ export function defaultDraft(): ProjectDraft {
   };
 }
 
-/** 从配置对象合并默认值生成草稿 */
-function draftFromConfig(cfg: Record<string, unknown> | null | undefined): ProjectDraft {
+/** 从配置对象合并默认值生成草稿（导出供往返测试；performance 块按键缺省开，
+ *  与 player 侧 `!== false` 口径一致） */
+export function draftFromConfig(cfg: Record<string, unknown> | null | undefined): ProjectDraft {
   const d = defaultDraft();
   if (!cfg) return d;
   const num = (v: unknown, fb: number) => (typeof v === "number" && v > 0 ? Math.round(v) : fb);
@@ -174,6 +181,14 @@ function draftFromConfig(cfg: Record<string, unknown> | null | undefined): Proje
         z: n(g.z, d.physicsGravity.z),
       };
     })(),
+    instancingEnabled: (() => {
+      const pf = (cfg.performance ?? {}) as { instancing?: unknown };
+      return pf.instancing !== false;
+    })(),
+    batchingEnabled: (() => {
+      const pf = (cfg.performance ?? {}) as { batching?: unknown };
+      return pf.batching !== false;
+    })(),
     tags: parseTagList(cfg.tags),
     layers: parseLayerTable(cfg.layers),
     dracoCompressionEnabled: (() => {
@@ -200,11 +215,10 @@ export async function loadProjectDraft(): Promise<ProjectDraft> {
   }
 }
 
-/** 保存项目设置到 project.config.json（保留未编辑字段由草稿整体写回），并同步 store */
-export async function saveProjectDraft(draft: ProjectDraft): Promise<void> {
-  const p = getProjectStore();
-  if (!p.currentPath) throw new Error("尚未打开项目，无法保存设置");
-  const next: Record<string, unknown> = {
+/** 草稿 → project.config.json 序列化（保存链路唯一实现；纯函数便于与
+ *  draftFromConfig 做双向往返测试） */
+export function configFromDraft(draft: ProjectDraft): Record<string, unknown> {
+  return {
     version: draft.version.trim() || "0.0.1",
     description: draft.description.trim(),
     mainScene: draft.mainScene.trim(),
@@ -227,6 +241,12 @@ export async function saveProjectDraft(draft: ProjectDraft): Promise<void> {
         z: draft.physicsGravity.z,
       },
     },
+    // 运行期批处理开关：预览产物 config.json 即本文件原文，导出产物 config 由
+    // 项目配置为底组装——player 按 cfg.performance 读取（instancing/batching）
+    performance: {
+      instancing: draft.instancingEnabled,
+      batching: draft.batchingEnabled,
+    },
     // 标签/层表保存前统一收敛（trim / 去重 / 去空；index 0 强制内置 Default）
     tags: parseTagList(draft.tags),
     layers: layerTableToJSON(parseLayerTable(draft.layers)),
@@ -235,6 +255,13 @@ export async function saveProjectDraft(draft: ProjectDraft): Promise<void> {
       textureCompression: draft.textureCompressionEnabled,
     },
   };
+}
+
+/** 保存项目设置到 project.config.json（保留未编辑字段由草稿整体写回），并同步 store */
+export async function saveProjectDraft(draft: ProjectDraft): Promise<void> {
+  const p = getProjectStore();
+  if (!p.currentPath) throw new Error("尚未打开项目，无法保存设置");
+  const next = configFromDraft(draft);
   await api.writeText(p.currentPath, PROJECT_CONFIG_REL, JSON.stringify(next, null, 2));
   p.setRendererBackend(draft.renderer);
   p.setPhysicsBackend(draft.physicsBackend);

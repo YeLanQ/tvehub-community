@@ -37,8 +37,19 @@ export function ensureHeightFogChunk(): void {
 	vFogDepth = - mvPosition.z;
 
 	// 世界海拔（雾带高度判定用）：position 为 prefix 全量可用属性（精灵着色器
-	// 无 transformed / 蒙皮 morph 均可回退到此），矩阵乘法在顶点阶段一次完成
-	vFogWorldY = ( modelMatrix * vec4( position, 1.0 ) ).y;
+	// 无 transformed / 蒙皮 morph 均可回退到此），矩阵乘法在顶点阶段一次完成。
+	// 实例化网格（批处理管线烘焙副本）的世界变换在 instanceMatrix——three
+	// 在 USE_INSTANCING 下经 prefix 声明该 attribute，按宏分支补乘；非实例化
+	// 材质不定义该宏，生成的 GLSL 与无分支时逐字一致
+	#ifdef USE_INSTANCING
+
+		vFogWorldY = ( modelMatrix * instanceMatrix * vec4( position, 1.0 ) ).y;
+
+	#else
+
+		vFogWorldY = ( modelMatrix * vec4( position, 1.0 ) ).y;
+
+	#endif
 
 #endif
 `;

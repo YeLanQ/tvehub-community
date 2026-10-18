@@ -8,6 +8,8 @@
 `worldPosition`(只读)、`parent/children`、`translate(x,y,z)`、`rotate(xDeg,yDeg,zDeg)`、
 `lookAt(worldVec3)`（前向 = -Z）、`find("父/子")`、
 `getComponent(类|键)`、`addComponent(类, settings?)`。
+位姿/可见性写入对被实例化烘焙的节点同样有效（烘焙映射自动同步到实例副本，
+下一帧有表现；编辑器勾了「运行期动态」的节点则完全不参与烘焙）。
 
 ## 模板：最小组件（装饰器声明式写法）
 

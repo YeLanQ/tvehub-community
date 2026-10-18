@@ -261,9 +261,36 @@ onMounted(async () => {
                   <option value="auto">自动（优先 WebGPU）</option>
                 </select>
               </div>
+              <label class="ps-field ps-physics-toggle">
+                <input
+                  id="ps-instancing-enabled"
+                  v-model="draft.instancingEnabled"
+                  type="checkbox"
+                />
+                <span>实例化批处理（InstancedMesh）</span>
+              </label>
+              <p class="ps-note">
+                预览/发布产物中，相同几何与材质的静态网格合并为一个 InstancedMesh
+                一次绘制，大幅减少 DrawCall。
+              </p>
+              <label class="ps-field ps-physics-toggle">
+                <input
+                  id="ps-batching-enabled"
+                  v-model="draft.batchingEnabled"
+                  type="checkbox"
+                />
+                <span>静态几何合并</span>
+              </label>
+              <p class="ps-note">
+                预览/发布产物中，同材质不同几何的静态网格烘焙合并为单个网格；
+                实例化未覆盖的剩余网格走此合并。带脚本/物理组件、被动画或脚本图
+                引用的网格自动排除出两项优化。
+              </p>
               <p class="ps-note">
                 渲染后端在编辑器启动/重载视口时生效；WebGPU 与 WebGL 的后端在运行时不可切换，
                 修改后请重新打开编辑器查看效果。设计分辨率修改会即时同步到相机辅助视锥线框。
+                两项批处理开关仅作用于运行期产物（编辑器视口不受影响），保存后
+                刷新预览面板或重新构建生效。
               </p>
             </section>
 
