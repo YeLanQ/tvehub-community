@@ -1,6 +1,6 @@
 ---
 name: tve-engine-interfaces
-description: TvE Hub 引擎侧全部接口设计：编辑器引擎（EditorEngine/SceneClient/ScenePrototype）与播放运行时（src/runtime → public/engine）、tve 脚本 SDK、场景图逻辑运行时、构建管线，每单元含契约+真实使用例+测试例。凡改引擎、加节点类型/组件、动场景序列化、写 tve 用户脚本、接场景写通道、排查预览/导出产物问题，一律先读本技能。
+description: TvEHub Community 引擎侧全部接口设计：编辑器引擎（EditorEngine/SceneClient/ScenePrototype）与播放运行时（src/runtime → public/engine）、tve 脚本 SDK、场景图逻辑运行时、构建管线，每单元含契约+真实使用例+测试例。凡改引擎、加节点类型/组件、动场景序列化、写 tve 用户脚本、接场景写通道、排查预览/导出产物问题，一律先读本技能。
 ---
 
 # 引擎侧接口设计

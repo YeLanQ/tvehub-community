@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TvE Hub",
-  "mainBinaryName": "TvE Hub",
-  "version": "1.0.0+2",
+  "productName": "TvEHub Community",
+  "mainBinaryName": "TvEHub Community",
+  "version": "1.1.0",
   "identifier": "TvE.Hub",
   "build": {
     "beforeDevCommand": "pnpm dev",

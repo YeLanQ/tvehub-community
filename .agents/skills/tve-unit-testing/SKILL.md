@@ -1,6 +1,6 @@
 ---
 name: tve-unit-testing
-description: TvE Hub 单元测试模式与添加测试的操作规范：specs 与源文件同目录、无 vi.mock 的注入/单例桩风格、ES2020 类型口径、覆盖率分桶阈值、dev/build 门禁链、正常/边界/异常/空值四类用例组织。凡要写 *.spec.ts、补单测、调覆盖率阈值、被 vitest 或门禁拦下、问"这个要不要写测试"，一律先读本技能。
+description: TvEHub Community 单元测试模式与添加测试的操作规范：specs 与源文件同目录、无 vi.mock 的注入/单例桩风格、ES2020 类型口径、覆盖率分桶阈值、dev/build 门禁链、正常/边界/异常/空值四类用例组织。凡要写 *.spec.ts、补单测、调覆盖率阈值、被 vitest 或门禁拦下、问"这个要不要写测试"，一律先读本技能。
 ---
 
 # 单元测试模式与添加测试

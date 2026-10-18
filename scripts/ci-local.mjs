@@ -2,6 +2,7 @@
 // 本地自动 CI（一键门禁链）：提交/发版前的本地全量自检，与 dev/build 门禁同源。
 //
 // 步骤（默认）：
+//   identity = node scripts/check-product-identity.mjs 产品名称/版本展示面同步门禁
 //   skills  = node scripts/check-skills.mjs        技能文档漂移校验（自演化检测网）
 //   docs    = pnpm gen:api-docs && pnpm docs:test  文档再生成（示例覆盖门禁）+
 //                                                  文档代码块测试（类型+真实执行）
@@ -40,6 +41,12 @@ const skip = typeof flag("--skip") === "string" ? flag("--skip").split(",") : []
 
 /** 步骤表：cmd 为 shell 字符串（Windows 下经 shell 解析 .cmd/.cmd 垫片） */
 const STEPS = [
+  {
+    name: "identity",
+    title: "产品名称与版本同步",
+    cmd: "node scripts/check-product-identity.mjs",
+    hint: "事实源 src-tauri/tauri.conf.json：改 productName/version 后同步 mainBinaryName、home.html、窗口标题、README 与 architecture/README",
+  },
   { name: "skills", title: "技能文档校验", cmd: "node scripts/check-skills.mjs" },
   {
     name: "docs",

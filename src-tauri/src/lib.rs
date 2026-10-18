@@ -999,7 +999,7 @@ pub fn run() {
                 "home",
                 tauri::WebviewUrl::App("home.html".into()),
             )
-            .title("TvE Hub")
+            .title("TvEHub Community")
             .inner_size(1300.0, 860.0)
             .min_inner_size(1300.0, 860.0)
             .visible(false)

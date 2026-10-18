@@ -1,6 +1,6 @@
 ---
 name: tve-sdk-scripting
-description: 用 tve SDK 为 TvE Hub 编写用户脚本（Component 组件）的代码技能：完整可抄的代码模板覆盖移动/输入/物理/碰撞/射线/补间/动画/UI/音频/粒子/FSM/BT/跨组件通信，含 API 签名速查、常见坑与验证流程。凡要写游戏脚本、给节点挂组件、实现玩法逻辑、用 engine.* 或 tween/property/@nodeType 写代码，一律用本技能——即使只说"写个脚本"。
+description: 用 tve SDK 为 TvEHub Community 编写用户脚本（Component 组件）的代码技能：完整可抄的代码模板覆盖移动/输入/物理/碰撞/射线/补间/动画/UI/音频/粒子/FSM/BT/跨组件通信，含 API 签名速查、常见坑与验证流程。凡要写游戏脚本、给节点挂组件、实现玩法逻辑、用 engine.* 或 tween/property/@nodeType 写代码，一律用本技能——即使只说"写个脚本"。
 ---
 
 # tve SDK 脚本编写

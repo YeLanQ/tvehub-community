@@ -6,6 +6,39 @@
 - `pnpm version:bump auto` 按未发布提交的类型自动递增版本（feat→minor、fix→patch、
   破坏性→major，0.x 阶段破坏性按 semver 惯例只升 minor），并把新版本段写进本文件。
 
+## v1.1.0（未发布）
+
+### 新特性
+- **runtime**: 同步商业版批处理与性能优化
+- **devtools**: 同步 TCP 直连与指令集校验/撤销事件
+
+### 问题修复
+- **runtime**: 修产物 file:// 白模与导出模板语法错误
+- **editor**: 枚举校验与别名归一、预览失败可见错误
+- **devtools**: 补齐 node.component.set 的方法与权限登记
+- **editor**: 新建节点空名称回退与 Group 占位名统一
+- **devtools**: capabilitiesRevision 升级并返回变更说明
+- **devtools**: 材质预取覆盖 props 写法并把创建期补丁并入 add 载荷
+- **devtools**: 路径统一、重复事件与保存噪音、冷启动就绪门控
+- **devtools**: 写命令读己之写与材质回读核验、日志去重
+- **deps**: Tauri JS 包对齐 Rust crate 版本——@tauri-apps/api ^2.12.4、plugin-opener ^2.7.2,根治 build 版本门禁拦截
+- **types**: model-sibling-url 测试补非空断言，对齐 main 现状（base TS 报 TS2345）
+- **build**: 微信 AppID 示例占位符改非 hex 形态，避免密钥扫描误报
+- **wechat**: GLB 贴图全黑双根因——图片接管沿原型链上溯 + Emitter 派发绑定 this=target
+- **model**: 模型纹理链路修复——编辑器双前缀/提取 io.read/GLB 外贴图打包/release 贴图外置化 + three 并发补丁
+
+### 文档
+- **readme**: README 对齐 docs 内嵌口径（仅剩 repos 一个 submodule）
+- **readme**: 删除 kp 代际留档 README_KP_1~4，快速开始/结构/质量等章节收编主 README
+- **bp**: 更新开源创新赛 5 页 BP 与架构表述
+- **architecture**: 新增架构文档库与差异创新篇
+
+### 其他
+- **docs**: docs 撤子模块改内嵌——社区文档随 base 库同步版本，不再外链（docs/ 忽略规则锚定根目录）
+- **docs**: 社区文档库切分——public/docs 改指 TvEHub-Docs-Community（孤儿历史，内容=eca8ece 基线）
+- **repo**: public/licenses 行尾锁 LF，根治生成物行尾幻影 M
+- **repo**: .gitattributes 锁 *.md 为 LF，根治 skills 文档 CRLF 复发
+
 ## v1.0.0+2（2026-10-12）
 
 ### 新特性

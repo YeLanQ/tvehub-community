@@ -1,6 +1,6 @@
 ---
 name: tve-release-versioning
-description: TvE Hub 语义化版本管理与发版流程：版本号单一事实源（src-tauri/tauri.conf.json）与三处同步、version:sync/check/bump 命令族、CHANGELOG.md 全量再生、发布锚点（chore(version) 裸版本主题或 git tag）与落锚三步发版。凡要设置/递增版本号、发版出包、再生 CHANGELOG、三处版本号不一致、"未发布"段如何发布、锚点没生效积压，一律先读本技能。
+description: TvEHub Community 语义化版本管理与发版流程：版本号/产品名称单一事实源（src-tauri/tauri.conf.json）与同步面、identity:check 名称版本门禁、version:sync/check/bump 命令族、CHANGELOG.md 全量再生、发布锚点（chore(version) 裸版本主题或 git tag）与落锚三步发版。凡要设置/递增版本号、改产品名、发版出包、再生 CHANGELOG、名称或版本展示面不一致、"未发布"段如何发布、锚点没生效积压，一律先读本技能。
 ---
 
 # 语义化版本管理与发版
@@ -9,6 +9,31 @@ description: TvE Hub 语义化版本管理与发版流程：版本号单一事�
 `src-tauri/tauri.conf.json` 的 version（exe 文件版本资源与首页 `__APP_VERSION__` 都取它），
 传播到 package.json 与 src-tauri/Cargo.toml；Cargo.lock 不手改，随 cargo build 再生。
 
+## 产品名称与版本展示面（identity 门禁）
+
+名称事实源 = tauri.conf 的 **productName**；版本事实源 = 同文件的 **version**。
+对外版本标签 = `r` + version（构建号 `+N` 显示为 `.N`）：`1.0.0` → `r1.0.0`，
+由 vite 构建期从事实源推导，**不另存第二份版本号**。
+
+改名称/版本时以下展示面必须同批改，`node scripts/check-product-identity.mjs`
+（`pnpm identity:check`）逐项校验，任一不一致退出码 1：
+
+| 面 | 要求 |
+|---|---|
+| `mainBinaryName` | 与 productName 相同（决定 exe 文件名） |
+| `home.html` | 页面 `<title>` 与启动页 boot-label 都是 productName |
+| `src-tauri/src/lib.rs` | 首页窗口 `.title("productName")` |
+| `src/app/components/HomeView.vue` | `TitleBar title="productName"` |
+| `src-tauri/Cargo.toml` | `description` 以 productName 开头；`[package] version` 与事实源一致 |
+| `package.json` | `version` 与事实源一致（version:sync 传播） |
+| `README.md` | 标题 = productName；「当前版本」行 = 对外标签 |
+| `architecture/README.md` | 「对应 rX.Y.Z」= 对外标签 |
+
+门禁挂在 `pnpm build` 链首（sync-version 之后）与 `pnpm ci:local` 第一步。
+改名/改版本的操作序：改事实源 → `pnpm version:sync`（仅版本变更时）→ 同步上表
+展示面 → `pnpm identity:check`。`identifier` 不随名称改（应用数据目录按它是锚，
+改它必须配套数据迁移，不能当纯展示项处理）。
+
 ## 命令族
 
 | 命令 | 行为 |
@@ -16,6 +41,7 @@ description: TvE Hub 语义化版本管理与发版流程：版本号单一事�
 | `pnpm version:sync` | 校准 package.json / Cargo.toml 到事实源（默认动作） |
 | `pnpm version:check` | 只校验不写入，不一致退出码 1（自检/CI 用；dev/build 链首挂的是 version:sync 直接对齐） |
 | `pnpm version:bump [级别]` | 递增事实源再同步；级别 major/minor/patch/build/auto |
+| `pnpm identity:check` | 校验名称/版本展示面全部同步（scripts/check-product-identity.mjs；build 链与 ci:local 首步） |
 | `pnpm changelog` | 全量再生 CHANGELOG.md（幂等，文件是产物勿手改）；`--check` 只校验 |
 
 bump 级别语义（scripts/sync-version.mjs:67）：

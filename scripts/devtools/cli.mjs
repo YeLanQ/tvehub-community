@@ -97,7 +97,7 @@ async function main() {
   } catch (e) {
     process.stderr.write(`${e.message}\n`);
     for (const a of e.attempts ?? []) process.stderr.write(`  - ${a}\n`);
-    process.stderr.write("提示：确认 TvE Hub 已启动（开发者服务随应用自动开启）。\n");
+    process.stderr.write("提示：确认 TvEHub Community 已启动（开发者服务随应用自动开启）。\n");
     return 2;
   }
 

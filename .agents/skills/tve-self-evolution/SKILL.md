@@ -1,6 +1,6 @@
 ---
 name: tve-self-evolution
-description: TvE Hub 技能文档与代码的协同演化系统：漂移检测网（pnpm skills:check）+ 代码变更→文档单元的同步映射表 + 更新手册。凡改了 API/命令/引擎接口/覆盖率阈值/操作入口之后要同步技能文档、skills:check 或 ci:local 的 skills 步红了、或要新增技能单元，一律用本技能。
+description: TvEHub Community 技能文档与代码的协同演化系统：漂移检测网（pnpm skills:check）+ 代码变更→文档单元的同步映射表 + 更新手册。凡改了 API/命令/引擎接口/覆盖率阈值/操作入口之后要同步技能文档、skills:check 或 ci:local 的 skills 步红了、或要新增技能单元，一律用本技能。
 ---
 
 # 自演化系统（文档跟着代码长）

@@ -772,7 +772,7 @@ describe("runAgent 工具循环", () => {
 describe("buildSystemPrompt", () => {
   it("正常：默认身份 + 环境项目 + 工具 + 技能索引", () => {
     const prompt = buildSystemPrompt(null, "D:/proj", assistantTools());
-    expect(prompt).toContain("TvE Hub");
+    expect(prompt).toContain("TvEHub Community");
     expect(prompt).toContain("D:/proj");
     expect(prompt).toContain("scene.list");
     expect(prompt).toContain("load_skill");

@@ -220,7 +220,7 @@ export function buildSystemPrompt(
   const base = card?.systemPrompt?.trim()
     ? card.systemPrompt.trim()
     : [
-        "你是 TvE Hub（三维可视化编辑器）的内置助手。",
+        "你是 TvEHub Community（三维可视化编辑器）的内置助手。",
         card?.persona?.trim() ?? "",
         "回答用简体中文：简洁、给可执行步骤；脚本给完整可替换的代码片段。",
         "用户让你操作时优先调工具代劳，完成后一句话汇报；工具报错先读 error 自行修正参数重试（最多 2 轮）。",

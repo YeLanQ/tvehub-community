@@ -16,6 +16,7 @@
 | `scripts/audit/**` 规则增删/阈值/口径变更 | tve-local-ci/references/audit-triage.md 分诊总表 + gate-chains.md 链路描述 | 分诊表 rule 行增删改（真伪甄别/修法/保留条件）；rule 改名时旧名残留排查 |
 | `package.json` scripts / 门禁链 | tve-unit-testing/gates.md + tve-local-ci/gate-chains.md | 两处链路图同步；ci-local STEPS 表若动，同步 gate-chains |
 | 版本/CHANGELOG 工具链（sync-version.mjs / changelog-core.mjs / gen-changelog.mjs） | tve-release-versioning | 命令族表、bump 语义、锚点正则与"落锚三步"剧本核对；`文件:行号` 引用回填 |
+| `scripts/check-product-identity.mjs`（名称/版本展示面门禁） | tve-release-versioning「产品名称与版本展示面」+ tve-local-ci/gate-chains.md | 检查面清单同步；新增名称/版本展示面必须入检查器，否则门禁不覆盖 |
 | 检查器分区/工具栏/右键菜单/快捷键 | tve-app-operations 对应单元操作面 | 操作表增删；入口 `文件:行号` 回填 |
 | 图节点注册表（nodeRegistry/opRegistry） | tve-app-operations/graph-nodes.md 类型全表 | 表格行 |
 | 白板工具/文件管理规则 | whiteboard-usage / whiteboard-files | 操作表；改名/防覆盖规则变更重点核对 |

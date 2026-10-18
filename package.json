@@ -1,7 +1,7 @@
 {
   "name": "three-visual-editor",
   "private": true,
-  "version": "1.0.0+2",
+  "version": "1.1.0",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "check:layers": "node scripts/check-layers.mjs",
     "check:surface": "node runtime/bridge/check-surface.mjs",
     "test:bridge": "node runtime/bridge/bridge.spec.mjs",
-    "build": "node scripts/sync-version.mjs && node runtime/scripts/engine.mjs && node runtime/scripts/wechat.mjs && node runtime/scripts/manifest.mjs && node scripts/sync-licenses.mjs && node scripts/gen-lan-theme.mjs && vue-tsc --noEmit && node scripts/check-layers.mjs && node scripts/audit/scan.mjs --no-cve && vitest run && vite build",
+    "build": "node scripts/sync-version.mjs && node scripts/check-product-identity.mjs && node runtime/scripts/engine.mjs && node runtime/scripts/wechat.mjs && node runtime/scripts/manifest.mjs && node scripts/sync-licenses.mjs && node scripts/gen-lan-theme.mjs && vue-tsc --noEmit && node scripts/check-layers.mjs && node scripts/audit/scan.mjs --no-cve && vitest run && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:portable": "tauri build",
@@ -38,6 +38,7 @@
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check",
     "version:bump": "node scripts/sync-version.mjs bump",
+    "identity:check": "node scripts/check-product-identity.mjs",
     "check:bridge-types": "node node_modules/typescript/bin/tsc -p runtime/bridge/tsconfig.json"
   },
   "dependencies": {

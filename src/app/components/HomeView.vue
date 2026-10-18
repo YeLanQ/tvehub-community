@@ -165,7 +165,7 @@ watch(showNewProject, (val) => {
 <template>
   <div class="home" @click="closeMenu">
     <!-- 自定义标题栏（无边框窗口）；助手入口仅首页提供 -->
-    <TitleBar title="TvE Hub" assistant @assistant="toggleAssistant" />
+    <TitleBar title="TvEHub Community" assistant @assistant="toggleAssistant" />
 
     <div class="home-body">
       <!-- 左侧导航 -->

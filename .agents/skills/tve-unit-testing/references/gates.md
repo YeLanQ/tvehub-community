@@ -4,7 +4,7 @@
 
 ```
 pnpm dev   = sync-version → vitest run → vite
-pnpm build = sync-version → engine(runtime/scripts) → wechat(runtime/scripts) →
+pnpm build = sync-version → identity:check → engine(runtime/scripts) → wechat(runtime/scripts) →
              manifest(runtime/scripts) → sync-licenses → gen-lan-theme →
              vue-tsc --noEmit → check:layers → vitest run → vite build
 ```

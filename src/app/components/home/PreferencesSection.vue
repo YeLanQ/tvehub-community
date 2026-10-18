@@ -218,9 +218,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
       <div class="settings-card">
         <h3>关于</h3>
         <div class="about-row">
-          <!-- 显示版本自动注入（vite define __APP_VERSION__，来源 src-tauri/tauri.conf.json） -->
-          <span>v{{ APP_VERSION }}</span>
-          <span class="dim">开发测试版</span>
+          <!-- 显示版本自动注入（vite define __APP_VERSION__，来源 src-tauri/tauri.conf.json，
+               对外为社区版发布线标签 r<major>.<minor>） -->
+          <span>{{ APP_VERSION }}</span>
+          <span class="dim">社区版</span>
         </div>
 
         <!-- 第三方依赖开源许可（清单动态生成：public/licenses/** → license-registry） -->

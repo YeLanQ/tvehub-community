@@ -45,6 +45,8 @@ reports/
 # public/web-preview + public/engine），由 scripts/build-wechat-runtime.mjs
 # 一次全量再生，不入库（与 public/engine/ 同一 doctrine）
 public/exports/wechat/runtime/
+# 微信 Worker 胶水中间产物（构建期按后端拼装，同属纯构建产物）
+public/exports/wechat/.worker-build/
 
 # 工程实战笔记独立仓（docs/notes，远程 TvEHub-Practical-Notes；非子模块，父仓库不跟踪）——锚定根目录，勿误伤 public/docs 内嵌文档
 /docs/

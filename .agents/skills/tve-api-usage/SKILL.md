@@ -1,9 +1,9 @@
 ---
 name: tve-api-usage
-description: TvE Hub 工程内部 API 使用手册：Tauri invoke 门面(src/lib/api.ts)、sceneApi、ui-state、stores、services、composables、命令注册表，每个单元含契约+真实使用例+测试例。凡要调用后端能力、读写资产/场景/项目/工坊、开窗口、发构建导出、注册或派发编辑器命令、新增面板功能，一律先查本技能——即使用户没说"API"两个字。
+description: TvEHub Community 工程内部 API 使用手册：Tauri invoke 门面(src/lib/api.ts)、sceneApi、ui-state、stores、services、composables、命令注册表，每个单元含契约+真实使用例+测试例。凡要调用后端能力、读写资产/场景/项目/工坊、开窗口、发构建导出、注册或派发编辑器命令、新增面板功能，一律先查本技能——即使用户没说"API"两个字。
 ---
 
-# TvE Hub 工程 API 使用方式
+# TvEHub Community 工程 API 使用方式
 
 本技能是**路由索引**：先在这里定位单元，再读 `references/` 下对应小文件。每个单元文件固定三段：**契约**（方法清单）、**使用例**（仓库真实调用点 `文件:行号`）、**测试例**（已有 spec 引用，或标注"当前无 spec"的推荐写法）。
 

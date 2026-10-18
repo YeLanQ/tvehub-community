@@ -2,6 +2,13 @@
 
 ## 各步细节
 
+**identity（check-product-identity.mjs）**：产品名称/版本展示面同步门禁——
+事实源 `src-tauri/tauri.conf.json` 的 productName/version；校验 mainBinaryName、
+home.html 标题与启动页、Rust 首页窗口标题、HomeView 标题栏、Cargo description、
+package.json/Cargo.toml 版本、README 标题与「当前版本」行、architecture/README
+适用版本行。对外标签 = `r` + version（`+N` → `.N`，1.0.0 → r1.0.0）；任一不一致
+退出码 1。改名字/版本的操作序见 `tve-release-versioning`。
+
 **skills（check-skills.mjs）**：扫描 `.agents/skills/**` 全部 .md——
 frontmatter（name=目录名、description 非空）；行数软上限 200/硬上限 260；
 `src|scripts|tests|public` 前缀路径引用必须存在（`*.spec.ts` 缺失只告警——

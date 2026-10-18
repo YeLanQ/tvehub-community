@@ -1,7 +1,7 @@
 # 03 · 两套协议，一张能力面：TCP 指令集与 MCP 的分工
 
 > **TL;DR**
-> TvE Hub 同时提供 TCP JSON Lines 与 MCP（JSON-RPC）两套协议，但它们**不是两套
+> TvEHub Community 同时提供 TCP JSON Lines 与 MCP（JSON-RPC）两套协议，但它们**不是两套
 > 能力、也不是两套实现**。方法表是唯一语义契约，命令注册表是唯一执行路径；两者
 > 同属首页的「开发者服务」，共用同一端口、工具权限和调用记录。TCP 是可直接驱动
 > 的原生接口（外部 Agent 工具只要能说 JSON Lines 就能接入），MCP 面向标准宿主，
@@ -260,7 +260,7 @@ TCP 适配层做的也是翻译：权限门、本地直答、转发、`replyToke
 
 ---
 
-## 9. 外部 Agent 接入后，TvE Hub 里看到什么
+## 9. 外部 Agent 接入后，TvEHub Community 里看到什么
 
 TCP 与 MCP 都属于「开发者服务」，外部 Agent 的操作不是“后台静默执行”：
 
@@ -270,7 +270,7 @@ TCP 与 MCP 都属于「开发者服务」，外部 Agent 的操作不是“后�
 - **调用记录可见。** 开发者服务记录最近 50 条调用：来源（`control` = TCP/MCP，
   `assistant` = 内置助手）、方法、是否成功、耗时、结果摘要；首页
   「开发者服务 · 最近调用」可查。
-- **Agent 的文本由 Agent 自己呈现。** TvE Hub 不读取外部 Agent 的对话文本，也不
+- **Agent 的文本由 Agent 自己呈现。** TvEHub Community 不读取外部 Agent 的对话文本，也不
   替它生成回复；它只负责执行命令、可视化操作结果、记录调用。Agent 需要确认画面时，
   应显式调用 `preview.screenshot`。
 - **前提是连上开发者服务。** 服务未启用、端口不可达或工具被禁用时，TCP/MCP 都

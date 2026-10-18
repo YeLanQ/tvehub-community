@@ -1,6 +1,6 @@
 ---
 name: tve-playable-ads
-description: TvE Hub 试玩广告渠道（playable）全量接口设计：构建渠道（目标注册表/单页多文件形态导出/双入口模板）、运行时宿主契约层（engine.playableAd 统一面 = CTA/可见性暂停/打点上报）、平台适配扩展配方（meta/google/mraid/ironsource/mintegral 已落地，pangle 占位待官方 spec）。凡要加广告平台适配、写结束卡/CTA/打点脚本、动 build/playable 导出链、排查试玩产物问题，一律先用本技能——宿主对接禁止绕开内置契约另写一套。
+description: TvEHub Community 试玩广告渠道（playable）全量接口设计：构建渠道（目标注册表/单页多文件形态导出/双入口模板）、运行时宿主契约层（engine.playableAd 统一面 = CTA/可见性暂停/打点上报）、平台适配扩展配方（meta/google/mraid/ironsource/mintegral 已落地，pangle 占位待官方 spec）。凡要加广告平台适配、写结束卡/CTA/打点脚本、动 build/playable 导出链、排查试玩产物问题，一律先用本技能——宿主对接禁止绕开内置契约另写一套。
 ---
 
 # 试玩广告渠道（playable）

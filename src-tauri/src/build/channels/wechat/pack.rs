@@ -42,7 +42,7 @@ pub(super) fn game_js(sub_roots: &[String], diag: bool) -> String {
     let diag_sync = diag_switch_js(diag);
     if sub_roots.is_empty() {
         return format!(
-            "// 由 TvE Hub 微信小游戏构建生成（请勿手动编辑）\n{diag_sync}\nrequire(\"./code.js\");\n"
+            "// 由 TvEHub Community 微信小游戏构建生成（请勿手动编辑）\n{diag_sync}\nrequire(\"./code.js\");\n"
         );
     }
     let roots: Vec<serde_json::Value> = sub_roots
@@ -50,7 +50,7 @@ pub(super) fn game_js(sub_roots: &[String], diag: bool) -> String {
         .map(|r| serde_json::Value::String(r.clone()))
         .collect();
     format!(
-        r#"// 由 TvE Hub 微信小游戏构建生成（请勿手动编辑）
+        r#"// 由 TvEHub Community 微信小游戏构建生成（请勿手动编辑）
 {diag_sync}
 (function (roots) {{
   var load = null;
@@ -180,7 +180,7 @@ pub(super) fn game_json(
 /// 「未找到 root 对应的 game.js」直接报错；分包加载完成后该文件会被执行），
 /// 资产分包无代码，落注释桩即可（桩在分包上下文执行，不写任何全局）。
 pub(super) fn subpackage_game_js() -> String {
-    "// TvE Hub 分包入口（本分包只含资产文件，无代码；微信要求分包根目录含 game.js）\n"
+    "// TvEHub Community 分包入口（本分包只含资产文件，无代码；微信要求分包根目录含 game.js）\n"
         .to_string()
 }
 
@@ -242,7 +242,7 @@ pub(super) fn resolve_appid(explicit: Option<&str>, out_dir: &Path) -> String {
 /// project.config.json：compileType=game + appid + condition 槽位
 pub(super) fn project_config_json(project_name: &str, appid: &str) -> Result<String, String> {
     let value = serde_json::json!({
-        "description": "由 TvE Hub 微信小游戏构建生成（appid 变更后需在开发者工具重新导入工程）",
+        "description": "由 TvEHub Community 微信小游戏构建生成（appid 变更后需在开发者工具重新导入工程）",
         "setting": {
             "urlCheck": false,
             "es6": true,
@@ -309,7 +309,7 @@ pub(super) fn readme(appid: &str, orientation: &str, sub_roots: &[String]) -> St
         )
     };
     format!(
-        r#"TvE Hub 微信小游戏构建产物
+        r#"TvEHub Community 微信小游戏构建产物
 =============================
 
 导入方式

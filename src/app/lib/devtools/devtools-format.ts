@@ -56,7 +56,7 @@ export function devtoolsHandoffText(input: {
 }): string {
   const address = input.tcp.replace(/^tcp:\/\//, "");
   const lines = [
-    "连接 TvE Hub 开发者服务（本机正在运行，TCP 直连指令集）：",
+    "连接 TvEHub Community 开发者服务（本机正在运行，TCP 直连指令集）：",
     "",
     `TCP：${address}（换行分隔 JSON，一行一条请求，按 id 配对响应）`,
   ];

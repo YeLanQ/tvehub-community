@@ -18,12 +18,14 @@ import { THEME_SOURCE, generateLanTheme } from "./scripts/gen-lan-theme.mjs";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// 应用显示版本：单一来源 = src-tauri/tauri.conf.json 的 version（semver + 构建号，
-// 也是 exe 文件版本资源的来源），构建期注入 __APP_VERSION__（+N 规范为第 4 段 .N）
+// 应用显示版本：单一来源 = src-tauri/tauri.conf.json 的 version（semver，也是
+// exe 文件版本资源的来源）。对外口径是社区版发布标签 r + 完整版本（构建号
+// `+N` 显示为 `.N`）：1.0.0 → "r1.0.0"——Tauri 强制 semver，标签由事实源推导、
+// 不另存版本号；名称/版本展示面由 scripts/check-product-identity.mjs 门禁校验
 function appDisplayVersion(): string {
   try {
     const conf = JSON.parse(fs.readFileSync(path.resolve(__dirname, "src-tauri/tauri.conf.json"), "utf-8"));
-    return String(conf.version ?? "").replace(/\+([0-9A-Za-z.-]+)$/, ".$1");
+    return `r${String(conf.version ?? "").replace(/\+([0-9A-Za-z.-]+)$/, ".$1")}`;
   } catch {
     return "";
   }
