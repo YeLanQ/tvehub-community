@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>TvEHub Community — Rust 第三方声明（NOTICES）</title>
+<style>
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; margin: 28px; color: #1f2937; line-height: 1.65; }
+  h1 { font-size: 20pt; color: #111827; }
+  h2 { font-size: 14pt; color: #111827; border-bottom: 1px solid #d1d5db; padding-bottom: 5px; margin-top: 26px; }
+  h3 { font-size: 11.5pt; color: #1f2937; margin: 20px 0 6px; }
+  p.meta { color: #6b7280; font-size: 10pt; }
+  pre { background: #f5f7fa; border: 0.75px solid #e5e7eb; border-radius: 4px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 8.5pt; line-height: 1.5; }
+  .license-used-by { margin: 4px 0 10px; }
+</style>
+</head>
+<body>
+<h1>TvEHub Community — Rust 依赖第三方声明</h1>
+<p class="meta">桌面端（src-tauri）Rust 依赖的许可与版权声明，由 cargo-about 从本地依赖缓存生成（重新生成：pnpm license:rust）。本文随应用分发；各组件的许可与版权信息以正文为准。</p>
+
+<h2>许可总览</h2>
+<ul class="licenses-overview">
+{{#each overview}}
+  <li><a href="#{{id}}">{{name}}</a>（{{count}} 个组件）</li>
+{{/each}}
+</ul>
+
+<h2>许可证正文与组件清单</h2>
+<ul class="licenses-list" style="list-style: none; padding-left: 0;">
+{{#each licenses}}
+  <li class="license">
+    {{#if first_of_kind}}
+      <h2 id="{{id}}">{{name}}</h2>
+    {{/if}}
+    <h3 id="{{id}}-{{@index}}">{{name}}</h3>
+    <h4>使用者：</h4>
+    <ul class="license-used-by">
+      {{#each used_by}}
+      <li>{{crate.name}} {{crate.version}}</li>
+      {{/each}}
+    </ul>
+    <pre class="license-text">{{text}}</pre>
+  </li>
+{{/each}}
+</ul>
+</body>
+</html>

@@ -198,3 +198,5 @@ pnpm gen:api-docs           # tve.d.ts 变更后再生 public/docs/sdk/api.md（
 本项目基于 [Apache License 2.0](LICENSE) 开源发布。
 
 创意工坊资源仓库 `public/repos/` 是 submodule（独立 MIT 开源仓库 [TvEHub-Repos](https://gitcode.com/YeLanQ/TvEHub-Repos)，许可文件见其仓库根目录）；内置文档 `public/docs/` 已随本库内嵌发布，同样基于 **MIT**（见 [public/docs/LICENSE](public/docs/LICENSE)）。
+
+第三方依赖的许可证副本与声明汇总在 [`public/licenses/`](public/licenses/)：npm 依赖逐包登记，Rust 依赖由 cargo-about 汇总为 [`rust-crates/NOTICES.html`](public/licenses/rust-crates/NOTICES.html)（`pnpm license:rust` 再生）。应用内「偏好设置 → 关于 → 开源许可」可直接查看。

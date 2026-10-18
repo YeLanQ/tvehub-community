@@ -1,0 +1,10 @@
+{
+  "id": "rust-crates",
+  "name": "Rust 依赖第三方声明（cargo-about 汇总）",
+  "version": "—",
+  "license": "多许可（见声明正文）",
+  "homepage": "https://github.com/YeLanQ/tvehub",
+  "note": "桌面端 Rust 依赖（501 crate，按构建目标筛选）的许可与版权声明汇总，由 cargo-about 从本地依赖缓存生成；重新生成：pnpm license:rust",
+  "source": "src-tauri/Cargo.lock（cargo-about 按构建目标筛选后 501 crate）",
+  "generatedBy": "scripts/gen-rust-notices.mjs"
+}

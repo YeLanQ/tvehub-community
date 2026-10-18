@@ -7,6 +7,9 @@ version = "1.1.0"
 description = "TvEHub Community —— 三维可视化编辑器与创意工坊"
 authors = ["Tve Team"]
 license = "Apache-2.0"
+# 桌面应用不发布到 crates.io：cargo-about 的 private.ignore 据此把自有 crate
+# 排除出第三方声明（自有代码不属于第三方许可清单）
+publish = false
 edition = "2021"
 # 新增 mcp 独立二进制后需显式指定默认运行目标（tauri dev/build 用）
 default-run = "tve-hub"

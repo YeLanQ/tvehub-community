@@ -31,6 +31,7 @@
     "gen:test-model": "vite build --ssr scripts/gen-test-model.ts --outDir .tmp-smoke --emptyOutDir && node .tmp-smoke/gen-test-model.js",
     "gen:preview-files": "node runtime/scripts/manifest.mjs",
     "gen:licenses": "node scripts/sync-licenses.mjs",
+    "license:rust": "node scripts/gen-rust-notices.mjs",
     "gen:api-docs": "node scripts/gen-api-docs.mjs",
     "docs:test": "node scripts/docs-tests/cli.mjs",
     "changelog": "node scripts/gen-changelog.mjs",
