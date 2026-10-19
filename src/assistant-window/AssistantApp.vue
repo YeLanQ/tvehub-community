@@ -132,13 +132,16 @@ async function callDevtools(
 }
 
 async function refreshProjects(): Promise<void> {
-  // devtools project.list 返回 { recent: [{path,name,sceneCount}] }（后端已滤掉
-  // 不存在的项目目录）。已删项目的工作区索引条目保留不销毁——其会话叶因项目
-  // 行消失而自然不再渲染（数据红线：会话历史永不因启发式探测被清理）
-  const doc = (await callDevtools("project.list", undefined, true)) as {
-    recent?: ProjectRow[];
-  } | null;
-  projects.value = Array.isArray(doc?.recent) ? doc.recent : [];
+  // 左栏是只读 UI 数据，直连后端 list_recent_projects：
+  // 不走 devtools_internal_call——那条通道要求开发者服务已开启且工具未被禁用，
+  // 失败又是静默的（callDevtools 的 silent），服务关闭时左栏会永远显示「暂无项目」。
+  // 项目管理页（首页）读的是同一个命令，因此两边清单必然一致。
+  try {
+    projects.value = await api.listRecentProjects();
+  } catch (e) {
+    console.error("读取最近项目失败:", e);
+    projects.value = [];
+  }
 }
 
 async function refreshEditorState(): Promise<void> {
