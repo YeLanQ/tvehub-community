@@ -6,6 +6,7 @@
 import { createApp } from "vue";
 import DocsWindowApp from "./docs-window/DocsWindowApp.vue";
 import { installThemeSync } from "./app/lib/theme-colors";
+import "./app/lib/platform-capabilities"; // 标记 html[data-os]（Linux 表单控件兼容样式）
 import "./styles/global.scss";
 
 // 主题颜色自定义：恢复持久化覆盖 + 跟随其他窗口的实时修改

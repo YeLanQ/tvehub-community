@@ -11,6 +11,7 @@ import { uiStateGet, uiStateSet } from "./lib/ui-state";
 import { getAssistantStore } from "./assistant-window/store";
 import { getConversations } from "./assistant-window/conversations";
 import { installThemeSync } from "./app/lib/theme-colors";
+import "./app/lib/platform-capabilities"; // 标记 html[data-os]（Linux 表单控件兼容样式）
 
 // 主题颜色自定义：恢复持久化覆盖 + 跟随其他窗口的实时修改
 installThemeSync();

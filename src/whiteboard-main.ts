@@ -9,6 +9,7 @@ import { getWhiteboardStore } from "./whiteboard-window/whiteboardStore";
 import { isTauri } from "./lib/tauri-env";
 import { api } from "./lib/api";
 import { installThemeSync } from "./app/lib/theme-colors";
+import "./app/lib/platform-capabilities"; // 标记 html[data-os]（Linux 表单控件兼容样式）
 import "./styles/global.scss";
 import "./styles/components/toolbar.scss";
 import "./styles/whiteboard.scss";

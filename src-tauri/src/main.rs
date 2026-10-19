@@ -18,5 +18,12 @@ fn main() {
         tve_hub_lib::mcp_bridge::run(port);
         return;
     }
+    // WebKitGTK 2.42+ 的 DMABUF 零拷贝合成在部分显卡/会话（NVIDIA、Wayland、
+    // 虚拟机）下拖动窗口或面板分隔条时出现黑块、撕裂与残帧。默认关闭该合成
+    // 路径换取正确画面；用户显式设为 0 时尊重其选择（恢复零拷贝）。
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     tve_hub_lib::run()
 }

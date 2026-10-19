@@ -16,6 +16,7 @@ import { api } from "./lib/api";
 import { sceneApi } from "./lib/scene-api";
 import type { WindowProjectPayload } from "./app/lib/window-handoff";
 import { installThemeSync } from "./app/lib/theme-colors";
+import "./app/lib/platform-capabilities"; // 标记 html[data-os]（Linux 表单控件兼容样式）
 import "./styles/global.scss";
 
 debugLog("boot", "graph window script started");

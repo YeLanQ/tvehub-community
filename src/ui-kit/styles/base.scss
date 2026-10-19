@@ -67,6 +67,27 @@ textarea {
   }
 }
 
+// select 外观统一：Linux/WebKitGTK 会让 GTK 主题直接绘制原生控件，忽略
+// background/color（表现为白底浅字）；去掉原生外观并自绘箭头。
+// 仅作用于 Linux（html[data-os] 由 platform-capabilities 标记），Windows 保持原生。
+// background-* 用 !important：各面板的 `background:` 简写会重置背景图，
+// 而它们的选择器优先级更高。
+html[data-os="linux"] select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 20px !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 12px) calc(50% + 1px),
+    calc(100% - 8px) calc(50% + 1px) !important;
+  background-size:
+    4px 4px,
+    4px 4px !important;
+  background-repeat: no-repeat !important;
+}
+
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;

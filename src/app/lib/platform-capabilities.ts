@@ -39,6 +39,23 @@ function emptyState(): PlatformState {
   return { ready: false, os: "unknown", arch: "", build: "", features: {} };
 }
 
+/** UA 兜底识别（仅用于首个 IPC 返回前给 CSS 标 data-os） */
+function guessOsFromUa(): string {
+  if (typeof navigator === "undefined") return "unknown";
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return "windows";
+  if (/Macintosh|Mac OS X/i.test(ua)) return "macos";
+  if (/Linux/i.test(ua)) return "linux";
+  return "unknown";
+}
+
+/** Linux 专用 CSS 兼容补丁按 html[data-os="linux"] 作用域生效（见 base.scss） */
+function applyOsAttribute(os: string): void {
+  if (typeof document !== "undefined") document.documentElement.dataset.os = os;
+}
+
+applyOsAttribute(guessOsFromUa());
+
 let state = reactive<PlatformState>(emptyState());
 let loading: Promise<void> | null = null;
 
@@ -65,6 +82,7 @@ function apply(caps: {
   build: string;
   features: Record<string, PlatformCapability>;
 }): void {
+  applyOsAttribute(caps.os);
   state.os = caps.os;
   state.arch = caps.arch;
   state.build = caps.build;
