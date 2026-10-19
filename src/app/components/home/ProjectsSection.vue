@@ -9,7 +9,7 @@
 // 菜单展开路径由 HomeView 持有（根级点击与关闭对话框都要收起菜单），此处经
 // v-model:menu-path 读写；项目列表与目录选择走项目 store（无本组件局部副本）。
 // ---------------------------------------------------------------------------
-import { ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { getProjectStore, type RecentProject } from "../../stores/project";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { confirm } from "../../lib/confirm";
@@ -17,6 +17,7 @@ import { prompt } from "../../lib/prompt";
 import { toastErr } from "../../lib/toast";
 import { api } from "../../../lib/api";
 import { openScriptGraphWindow } from "../../lib/graph-launch";
+import { capability, ensurePlatformCapabilities } from "../../lib/platform-capabilities";
 
 const emit = defineEmits<{
   /** 请求新建项目（对话框由 HomeView 持有） */
@@ -30,6 +31,12 @@ const menuPath = defineModel<string | null>("menuPath", { default: null });
 
 const projectStore = getProjectStore();
 const busy = ref(false);
+/** 系统回收站能力（Windows/Linux 可用；其他平台置灰入口） */
+const trashCap = computed(() => capability("trash"));
+
+onMounted(() => {
+  void ensurePlatformCapabilities();
+});
 
 async function browseAndOpen() {
   busy.value = true;
@@ -200,7 +207,14 @@ function toggleMenu(path: string) {
           <button @click="onOpenScriptGraph(p.path, p.name)">打开场景图</button>
           <button @click="revealFolder(p.path)">在文件夹中显示</button>
           <button @click="renameProject(p.path, p.name)">重命名项目</button>
-          <button class="danger" @click="trashProject(p.path, p.name)">移动到垃圾篓</button>
+          <button
+            class="danger"
+            :disabled="!trashCap.available"
+            :title="trashCap.available ? '' : trashCap.reason"
+            @click="trashProject(p.path, p.name)"
+          >
+            移动到垃圾篓
+          </button>
           <button class="danger" @click="removeProject(p.path)">从列表移除</button>
         </div>
       </div>

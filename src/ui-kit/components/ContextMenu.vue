@@ -170,6 +170,7 @@ watch(
             v-else
             class="ctx-item"
             :class="{ disabled: item.disabled, danger: item.danger }"
+            :title="item.title"
             role="menuitem"
             :tabindex="-1"
             @mouseenter="enterItem(L, item, $event.currentTarget)"

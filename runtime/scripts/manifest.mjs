@@ -26,6 +26,10 @@ import { fileURLToPath } from "node:url";
 import { ROOT } from "./lib/paths.mjs";
 import { PHYSICS_ENGINES_PREFIX } from "../bridge/protocol.ts";
 
+// 键排序走码点比较（locale 无关）：localeCompare 受 ICU/系统 locale 影响，
+// Windows 与 Linux 构建会产出不同顺序，导致 tracked 的 generated 文件出现伪 diff。
+const byKeyCodepoint = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
 /** 运行时源目录（相对项目根；vite 插件据此挂文件监听） */
 export const CHANNEL_RUNTIME_ROOTS = [
   "public/web-preview",
@@ -158,7 +162,7 @@ function scanWechat() {
         !f.key.startsWith(WECHAT_WORKERS_PREFIX) &&
         !WECHAT_DRACO_KEYS.includes(f.key),
     )
-    .sort((a, b) => a.key.localeCompare(b.key));
+    .sort(byKeyCodepoint);
   // 物理引擎按后端分组（与 web 渠道同规则：前缀下第一段目录，否则剥扩展名；
   // 胶水 .js 与随包 .wasm 归同一后端组）
   const byBackend = {};
@@ -172,7 +176,7 @@ function scanWechat() {
   }
   const groups = {};
   for (const k of Object.keys(byBackend).sort()) {
-    groups[`physics:${k}`] = byBackend[k].sort((a, b) => a.key.localeCompare(b.key));
+    groups[`physics:${k}`] = byBackend[k].sort(byKeyCodepoint);
   }
   // 物理 Worker bundle 按后端分组（workers/<backend>/tve.js；与 physics:<backend>
   // 同键规则——导出期按项目后端同选同落，键形 worker:physics:<backend>）
@@ -183,7 +187,7 @@ function scanWechat() {
     (byWorkerBackend[backend] ??= []).push(f);
   }
   for (const k of Object.keys(byWorkerBackend).sort()) {
-    groups[`worker:physics:${k}`] = byWorkerBackend[k].sort((a, b) => a.key.localeCompare(b.key));
+    groups[`worker:physics:${k}`] = byWorkerBackend[k].sort(byKeyCodepoint);
   }
   // Draco 解码器条件组（与 web 组同名：项目启用 resources.dracoCompression 才随包）
   groups.draco = WECHAT_DRACO_KEYS.filter((k) => all.some((f) => f.key === k)).map((k) =>

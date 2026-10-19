@@ -14,14 +14,10 @@ use tauri::{AppHandle, Emitter};
 use super::scaffold_from_files;
 use crate::{appdirs, store};
 
-/// 内置模板目录：开发读仓库 public/templates；生产读 exe 旁 public/templates
-/// （extract_builtin_archive 已随启动释放，templates 类在内嵌归档里）。
+/// 内置模板目录（开发读仓库 public/templates；生产读资源根 —— 只读安装目录
+/// 会落在配置根下 public/templates，见 appdirs::resource_root）。
 pub fn builtin_template_dir(name: &str) -> Result<PathBuf, String> {
-    let base = if cfg!(debug_assertions) {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public/templates")
-    } else {
-        appdirs::exe_dir().join("public/templates")
-    };
+    let base = appdirs::resource_root().join("templates");
     let dir = base.join(name);
     if dir.is_dir() {
         Ok(dir)

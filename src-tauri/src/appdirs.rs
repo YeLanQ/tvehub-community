@@ -52,6 +52,43 @@ pub fn config_root(app: &AppHandle) -> PathBuf {
     }
 }
 
+/// 资源根目录判定（public/ 的父目录）：
+/// - dev：仓库 public/（不写 target/）；
+/// - release 便携：exe 同级 public/（与历史布局一致）；
+/// - release 不可写（Linux AppImage 挂载点 / Program Files）：配置根下 public/
+///   （Linux 即 ~/.config/TvE.Hub/public）。
+pub fn resources_root(app: &AppHandle) -> PathBuf {
+    if cfg!(debug_assertions) {
+        return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public");
+    }
+    if portable_root().is_some() {
+        exe_dir().join("public")
+    } else {
+        config_root(app).join("public")
+    }
+}
+
+/// 进程级资源根（setup 阶段由 AppHandle 初始化；未初始化时按 dev/exe 旁兜底）
+pub fn init_resource_root(app: &AppHandle) {
+    let _ = resource_root_cell().set(resources_root(app));
+}
+
+/// 资源根（命令/asset 协议等无 AppHandle 的调用点用）
+pub fn resource_root() -> PathBuf {
+    resource_root_cell().get().cloned().unwrap_or_else(|| {
+        if cfg!(debug_assertions) {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../public")
+        } else {
+            exe_dir().join("public")
+        }
+    })
+}
+
+fn resource_root_cell() -> &'static OnceLock<PathBuf> {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    &ROOT
+}
+
 /// WebView2 浏览器数据目录（HTTP 缓存/着色器缓存/origin 存储等，随窗口
 /// builder.data_directory 指定）：便携模式 = data/webview/；否则 None
 /// （不指定，走 WebView2 默认 —— Windows 上为 %LOCALAPPDATA%\TvE.Hub）。

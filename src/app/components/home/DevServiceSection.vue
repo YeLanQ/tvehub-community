@@ -25,13 +25,14 @@ import { toastWarn, toastErr } from "../../lib/toast";
 import {
   groupDevToolsTools,
   mcpEndpointOf,
-  mcpStdioCommandOf,
+  mcpStdioSpecOf,
   mcpConfigJson,
   mcpStdioConfigJson,
   tcpEndpointOf,
   discoveryFilePath,
   devtoolsHandoffText,
 } from "../../lib/devtools/devtools-format";
+import { capability, ensurePlatformCapabilities } from "../../lib/platform-capabilities";
 
 const emit = defineEmits<{
   /** 打开内嵌文档查看器（弹层挂在 HomeView 根级，与确认框同级） */
@@ -93,9 +94,11 @@ const enabledMcpToolsList = computed(() =>
   enabledMcpTools().map((t) => ({ ...t, mcpName: sanitizeMcpName(t.name) })),
 );
 const mcpEndpoint = computed(() => mcpEndpointOf(devtools.info, devtools.port));
-const mcpStdioCommand = computed(() => mcpStdioCommandOf(devtools.info));
+/** MCP stdio 桥：Windows 用伴生 mcp.exe，其他平台用主程序 --mcp-bridge */
+const mcpCap = computed(() => capability("mcpBridge"));
+const mcpStdioSpec = computed(() => mcpStdioSpecOf(devtools.info));
 const mcpConfig = computed(() => mcpConfigJson(mcpEndpoint.value));
-const mcpStdioConfig = computed(() => mcpStdioConfigJson(mcpStdioCommand.value, devtools.port));
+const mcpStdioConfig = computed(() => mcpStdioConfigJson(mcpStdioSpec.value, devtools.port));
 
 /** 控制服务器 TCP 端点（一键复制/转发用） */
 const tcpEndpoint = computed(() => tcpEndpointOf(devtools.info, devtools.port));
@@ -165,6 +168,7 @@ function fmtCallTime(ts: number): string {
 
 let logTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
+  void ensurePlatformCapabilities();
   void refreshRecentCalls();
   logTimer = setInterval(() => void refreshRecentCalls(), 3000);
   if (inTauri) {
@@ -337,7 +341,7 @@ onBeforeUnmount(() => clearInterval(logTimer));
           @click="copyDevToolsText(mcpConfig)"
         >{{ mcpConfig }}</pre>
       </details>
-      <details>
+      <details v-if="mcpCap.available">
         <summary>stdio 配置</summary>
         <pre
           class="devtools-code mono"
@@ -345,6 +349,7 @@ onBeforeUnmount(() => clearInterval(logTimer));
           @click="copyDevToolsText(mcpStdioConfig)"
         >{{ mcpStdioConfig }}</pre>
       </details>
+      <p v-else class="hint">{{ mcpCap.reason }}</p>
     </div>
 
     <!-- 文档与资源 -->

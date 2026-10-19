@@ -24,6 +24,7 @@ import { logStore } from "../stores/log";
 import { getProjectStore } from "../stores/project";
 import { getEditorStore, resetEditorEngine } from "../stores/editor";
 import { getBootLoadingStore } from "../stores/boot-loading";
+import { setActiveBackend } from "../lib/gpu-capability";
 
 /** 挂载任务去重：引擎挂载是异步的（渲染后端可能动态加载），并发调用共享同一任务 */
 let mountTask: Promise<void> | null = null;
@@ -211,6 +212,8 @@ export function mountEditor(container: HTMLElement): Promise<void> {
         });
         // 挂载期间被销毁（如就绪前点击"关闭"返回首页）→ 不再装载场景/重建
         if (engine.isDisposed()) return;
+        // 渲染后端已确定：回填 GPU 能力（菜单/设置据此置灰 WebGPU 独占功能）
+        setActiveBackend(engine.renderer.activeBackend === "webgpu" ? "webgpu" : "webgl");
         // 地形绘制落盘：工作缓冲编码 PNG → 写 splatmap 资产 → 引擎失效缓存重载
         engine.setTerrainPaintCommitHandler((buffer, rel) => {
           void commitTerrainPaint(engine, buffer, rel);

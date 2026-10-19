@@ -113,7 +113,27 @@ pnpm dev              # 浏览器开发模式（单窗口回退）
 pnpm tauri dev        # 桌面端开发模式（多会话窗口）
 pnpm build            # 前端构建（含运行时打包、类型检查、分层与质量门禁）
 pnpm build:portable   # 桌面端安装包构建
+pnpm build:linux      # Linux AppImage（在 Linux 主机上执行）
 ```
+
+### Linux 构建（AppImage）
+
+Linux 包需在 Linux x86_64 主机上原生构建（Tauri 不支持交叉编译）：
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+  libdbus-1-dev librsvg2-dev librsvg2-common gdk-pixbuf2.0-bin \
+  squashfs-tools patchelf build-essential pkg-config curl wget file
+gdk-pixbuf-query-loaders --update-cache
+pnpm install
+pnpm build:linux
+# 产物：src-tauri/target/release/bundle/appimage/*.AppImage
+```
+
+- AppImage 挂载点只读：内置资源与创意工坊目录释放到 `~/.config/TvE.Hub/public/`（便携包仍是 exe 同级 `public/`）；
+- 系统回收站走 `gio trash`，无 gio 时回落 XDG Trash；
+- MCP stdio 桥由主程序 `--mcp-bridge` 提供，不依赖伴生可执行文件；
+- 打包失败时 `build:linux` 会输出 linuxdeploy 的完整日志；常见依赖见上（`squashfs-tools`、`patchelf`、`librsvg2-common`、`gdk-pixbuf2.0-bin`）。
 
 ## 项目结构
 

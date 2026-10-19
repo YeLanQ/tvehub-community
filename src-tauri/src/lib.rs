@@ -12,7 +12,9 @@ mod devtools;
 mod internal;
 mod js_minify;
 mod lanshare;
+pub mod mcp_bridge;
 mod model_bin;
+mod platform;
 pub mod preview;
 mod project;
 mod repos;
@@ -407,9 +409,10 @@ async fn dev_app_dirs(app: tauri::AppHandle) -> Result<Vec<(String, String)>, St
         path.app_local_data_dir()
             .unwrap_or_else(|_| std::path::PathBuf::from("."))
     });
-    let dirs: [(&str, std::path::PathBuf); 3] = [
+    let dirs: [(&str, std::path::PathBuf); 4] = [
         ("程序目录", appdirs::exe_dir()),
         ("配置目录", appdirs::config_root(&app)),
+        ("资源目录", appdirs::resource_root()),
         ("WebView 数据", webview_dir),
     ];
     Ok(dirs
@@ -880,12 +883,10 @@ pub(crate) fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
 // release 构建由 build.rs 直接把 public/repos 拷到 exe 同级（copy_repos_to_target）。
 // ---------------------------------------------------------------------------
 
-/// 内置资源根目录：开发为仓库 public/<kind>；生产为 exe 同级 public/<kind>。
+/// 内置资源根目录：开发为仓库 public/<kind>；生产为资源根（便携 = exe 同级，
+/// 只读安装目录 = 配置根下 public/）+ <kind>。
 fn builtin_root(kind: &str) -> PathBuf {
-    if cfg!(debug_assertions) {
-        return Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../public/{kind}"));
-    }
-    appdirs::exe_dir().join("public").join(kind)
+    appdirs::resource_root().join(kind)
 }
 
 /// 内置资源根目录（internal）
@@ -933,11 +934,10 @@ fn parse_builtin_archive(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> 
     Ok(out)
 }
 
-/// 把内嵌资源释放到 exe 同级 public/（幂等：已存在文件不覆盖，保留用户修改）
-fn extract_builtin_archive(exe_dir: &Path) -> Result<(), String> {
-    let public = exe_dir.join("public");
+/// 把内嵌资源释放到资源根 public/（幂等：已存在文件不覆盖，保留用户修改）
+fn extract_builtin_archive(public_root: &Path) -> Result<(), String> {
     for (rel, bytes) in parse_builtin_archive(BUILTIN_ARCHIVE)? {
-        let dest = public.join(&rel);
+        let dest = public_root.join(&rel);
         if dest.exists() {
             continue;
         }
@@ -952,12 +952,6 @@ fn extract_builtin_archive(exe_dir: &Path) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 生产（release）启动时把内置资源释放到 exe 同级 public/（开发直接读仓库目录）
-    if !cfg!(debug_assertions) {
-        if let Err(e) = extract_builtin_archive(&appdirs::exe_dir()) {
-            eprintln!("[internal] 内置资源释放失败: {e}");
-        }
-    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(preview::PreviewServerState::default())
@@ -975,6 +969,14 @@ pub fn run() {
         // 开发者服务：应用启动即开启控制服务器（默认端口 39100，被占用回退随机端口）；
         // 首页「开发者服务」页签可停用/改端口。
         .setup(|app| {
+            // 资源根先定下来（便携 = exe 旁；只读安装目录 = 配置根/public/），
+            // 再把内嵌资源释放进去；窗口创建在下面，读取资源前已完成释放。
+            appdirs::init_resource_root(app.handle());
+            if !cfg!(debug_assertions) {
+                if let Err(e) = extract_builtin_archive(&appdirs::resource_root()) {
+                    eprintln!("[internal] 内置资源释放失败: {e}");
+                }
+            }
             // 先一次性迁移旧系统目录数据（若有），再迁移旧键名，最后启动依赖配置根的服务
             appdirs::migrate_legacy_config(app.handle());
             ui_state::migrate_key(
@@ -1101,6 +1103,7 @@ pub fn run() {
             append_debug_log,
             open_devtools,
             dev_app_dirs,
+            platform::platform_capabilities,
             show_window_with_project,
             take_pending_project,
             show_home_window,
@@ -1241,5 +1244,78 @@ mod builtin_archive_tests {
             !entries.iter().any(|(p, _)| p.starts_with("repos/")),
             "repos 不应再内嵌进归档（已外置为 exe 同级目录）"
         );
+    }
+}
+
+#[cfg(test)]
+mod window_dedupe_tests {
+    use super::{pick_hosting_window, PendingProjectPayload};
+    use std::collections::HashMap;
+
+    fn payload(root: &str) -> PendingProjectPayload {
+        PendingProjectPayload { root: root.into(), name: "demo".into(), rel: None }
+    }
+
+    fn entries(pairs: &[(&str, &str)]) -> HashMap<String, PendingProjectPayload> {
+        pairs.iter().map(|(l, r)| (l.to_string(), payload(r))).collect()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn same_project_hits_across_separator_case_and_trailing_slash() {
+        let e = entries(&[("editor-1", "C:\\dev\\proj\\Demo\\")]);
+        assert_eq!(
+            pick_hosting_window(&e, "editor-", "editor-2", "c:/dev/proj/demo"),
+            Some("editor-1".to_string()),
+            "分隔符/大小写/尾斜杠差异应视为同一项目"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn posix_paths_ignore_trailing_slash_but_keep_case() {
+        let e = entries(&[("editor-1", "/home/me/Demo/")]);
+        assert_eq!(
+            pick_hosting_window(&e, "editor-", "editor-2", "/home/me/Demo"),
+            Some("editor-1".to_string()),
+            "尾斜杠差异应视为同一项目"
+        );
+        assert_eq!(
+            pick_hosting_window(&e, "editor-", "editor-2", "/home/me/demo"),
+            None,
+            "POSIX 大小写敏感：不同目录不合并"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn different_project_misses_and_kind_is_isolated() {
+        let e = entries(&[("editor-1", "C:/dev/proj/Other"), ("graph-1", "C:/dev/proj/Demo")]);
+        assert_eq!(
+            pick_hosting_window(&e, "editor-", "editor-2", "c:/dev/proj/demo"),
+            None,
+            "编辑器请求不命中承载同项目的图窗口（同型隔离）"
+        );
+        assert_eq!(
+            pick_hosting_window(&e, "graph-", "graph-2", "c:/dev/proj/demo"),
+            Some("graph-1".to_string()),
+            "图窗口请求命中承载同项目的图窗口"
+        );
+    }
+
+    #[test]
+    fn excluded_self_label_misses() {
+        let e = entries(&[("editor-1", "C:/dev/proj/Demo")]);
+        assert_eq!(
+            pick_hosting_window(&e, "editor-", "editor-1", "c:/dev/proj/demo"),
+            None,
+            "同 label 重复交接不命中：保持原窗口重装载语义"
+        );
+    }
+
+    #[test]
+    fn empty_registry_misses() {
+        let e = entries(&[]);
+        assert_eq!(pick_hosting_window(&e, "editor-", "editor-2", "c:/dev/proj/demo"), None);
     }
 }

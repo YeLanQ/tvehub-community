@@ -11,5 +11,12 @@ fn main() {
         tve_hub_lib::preview::run_preview_server_mode(port, root);
         return;
     }
+    // MCP stdio 桥模式（Linux/macOS 无伴生 mcp.exe 时复用主程序）：
+    // --mcp-bridge [--port <N>]，stdin/stdout 走 JSON-RPC。
+    if args.get(1).map(String::as_str) == Some("--mcp-bridge") {
+        let port = tve_hub_lib::mcp_bridge::port_from_args(&args);
+        tve_hub_lib::mcp_bridge::run(port);
+        return;
+    }
     tve_hub_lib::run()
 }

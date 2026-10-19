@@ -7,6 +7,7 @@ import {
   type PhysicsBackendId,
 } from "../../framework/physics";
 import { parseLayerTable, parseTagList, type LayerTable } from "../../framework/layers";
+import { isWindowsPlatform } from "../lib/platform-capabilities";
 
 /** 项目默认主场景（打开项目时加载；之后可双击任意 .scene 资产切换） */
 export const DEFAULT_SCENE_REL = "assets/Main.scene";
@@ -101,9 +102,13 @@ export interface ProjectStore {
 
 let singleton: ProjectStore | null = null;
 
-/** 最近项目路径的比较键（分隔符/结尾分隔符/大小写不敏感；与后端 normalize 规则对应） */
+/** 最近项目路径的比较键（与后端 store.rs 的平台规则对应）：
+ * Windows 分隔符/大小写不敏感；POSIX 大小写敏感、只去结尾正斜杠。 */
 function recentPathKey(path: string): string {
-  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  if (isWindowsPlatform()) {
+    return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }
+  return path.replace(/\/+$/, "");
 }
 
 export function getProjectStore(): ProjectStore {

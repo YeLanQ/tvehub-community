@@ -2,6 +2,7 @@
 // 分组展示、端点/配置 JSON 生成不依赖 Vue；HomeView 只做参数装配与复制动作。
 
 import { type DevToolsInfo, DEVTOOLS_DEFAULT_PORT } from "./state";
+import { isWindowsPlatform } from "../platform-capabilities";
 
 export interface DevToolRow {
   id: string;
@@ -76,9 +77,12 @@ export function devtoolsHandoffText(input: {
   return lines.join("\n");
 }
 
-/** MCP stdio 桥程序路径（mcp.exe，与主程序同目录；未启用服务时回退裸文件名） */
-export function mcpStdioCommandOf(info: DevToolsInfo | null): string {
-  return info?.stdio_command ?? "mcp.exe";
+/** MCP stdio 桥命令（Windows = 同目录 mcp.exe；其他平台 = 主程序 + --mcp-bridge） */
+export function mcpStdioSpecOf(info: DevToolsInfo | null): { command: string; args: string[] } {
+  if (info) return { command: info.stdio_command, args: info.stdio_args ?? [] };
+  return isWindowsPlatform()
+    ? { command: "mcp.exe", args: [] }
+    : { command: "tve-hub", args: ["--mcp-bridge"] };
 }
 
 /** MCP 服务配置 JSON（streamable-http：服务名 + 端点 URL，同一端口） */
@@ -86,14 +90,17 @@ export function mcpConfigJson(endpoint: string): string {
   return JSON.stringify({ mcpServers: { "tve-devtools": { url: endpoint } } }, null, 2);
 }
 
-/** MCP 服务配置 JSON（stdio：客户端拉起 mcp.exe 子进程，--port 转发到 devtools TCP） */
-export function mcpStdioConfigJson(command: string, port: number): string {
+/** MCP 服务配置 JSON（stdio：客户端拉起桥进程，--port 转发到 devtools TCP） */
+export function mcpStdioConfigJson(
+  spec: { command: string; args: string[] },
+  port: number,
+): string {
   return JSON.stringify(
     {
       mcpServers: {
         "tve-devtools": {
-          command,
-          args: ["--port", String(port > 0 ? port : DEVTOOLS_DEFAULT_PORT)],
+          command: spec.command,
+          args: [...spec.args, "--port", String(port > 0 ? port : DEVTOOLS_DEFAULT_PORT)],
         },
       },
     },

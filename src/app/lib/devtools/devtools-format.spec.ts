@@ -6,6 +6,8 @@ import {
 import {
   devtoolsHandoffText,
   discoveryFilePath,
+  mcpStdioConfigJson,
+  mcpStdioSpecOf,
   tcpEndpointOf,
 } from "./devtools-format";
 
@@ -14,6 +16,7 @@ const info: DevToolsInfo = {
   url: "tcp://127.0.0.1:39101",
   mcp_url: "http://127.0.0.1:39101/mcp",
   stdio_command: "mcp.exe",
+  stdio_args: [],
   token: "t",
   protocol: "tcp-jsonlines + mcp-http",
 };
@@ -51,8 +54,31 @@ describe("discoveryFilePath 发现文件路径", () => {
   });
 });
 
-describe("devtoolsHandoffText 一键接入说明", () => {
-  it("只讲 TCP 直连指令集，包含握手/自省/示例指令与发现文件", () => {
+describe("mcpStdioSpecOf / mcpStdioConfigJson stdio 桥", () => {
+  it("Windows 使用伴生 mcp.exe 且不附加桥参数", () => {
+    const spec = mcpStdioSpecOf(info);
+    expect(spec).toEqual({ command: "mcp.exe", args: [] });
+    const cfg = JSON.parse(mcpStdioConfigJson(spec, 39101));
+    expect(cfg.mcpServers["tve-devtools"].args).toEqual(["--port", "39101"]);
+  });
+
+  it("其他平台使用主程序 --mcp-bridge 子命令", () => {
+    const spec = mcpStdioSpecOf({
+      ...info,
+      stdio_command: "/usr/bin/TvE Hub",
+      stdio_args: ["--mcp-bridge"],
+    });
+    expect(spec.command).toBe("/usr/bin/TvE Hub");
+    const cfg = JSON.parse(mcpStdioConfigJson(spec, 0));
+    expect(cfg.mcpServers["tve-devtools"].args).toEqual([
+      "--mcp-bridge",
+      "--port",
+      String(DEVTOOLS_DEFAULT_PORT),
+    ]);
+  });
+});
+
+describe("devtoolsHandoffText 一键接入说明", () => {  it("只讲 TCP 直连指令集，包含握手/自省/示例指令与发现文件", () => {
     const text = devtoolsHandoffText({
       tcp: "tcp://127.0.0.1:39100",
       discovery: "C:\\Users\\me\\AppData\\Roaming\\TvE.Hub\\devtools.json",

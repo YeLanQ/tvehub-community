@@ -112,8 +112,10 @@ pub struct DevToolsInfo {
     pub url: String,
     /// MCP HTTP 端点（http://127.0.0.1:<port>/mcp，同一端口）
     pub mcp_url: String,
-    /// MCP stdio 桥程序路径（mcp.exe，与主程序同目录；客户端配置 command 用）
+    /// MCP stdio 桥程序路径（Windows 为同目录 mcp.exe；其他平台为主程序自身）
     pub stdio_command: String,
+    /// stdio 桥的附加参数（其他平台为 ["--mcp-bridge"]，Windows 为空）
+    pub stdio_args: Vec<String>,
     pub token: String,
     pub protocol: String,
 }
@@ -142,11 +144,13 @@ pub struct DevToolsRuntime {
 
 impl DevToolsRuntime {
     fn info(&self) -> DevToolsInfo {
+        let (stdio_command, stdio_args) = mcp_stdio_spec();
         DevToolsInfo {
             port: self.port,
             url: format!("tcp://127.0.0.1:{}", self.port),
             mcp_url: format!("http://127.0.0.1:{}/mcp", self.port),
-            stdio_command: mcp_stdio_command(),
+            stdio_command,
+            stdio_args,
             token: self.token.clone(),
             protocol: "tcp-jsonlines + mcp-http".to_string(),
         }
@@ -1928,15 +1932,32 @@ fn scene_save_blocking(app: &AppHandle) -> Result<u64, String> {
     Ok(revision)
 }
 
-/// MCP stdio 桥程序路径：与主程序同目录的 mcp.exe（不存在时回退为裸文件名，供用户自行修正）。
-fn mcp_stdio_command() -> String {
-    const NAME: &str = if cfg!(windows) { "mcp.exe" } else { "mcp" };
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join(NAME)))
-        .filter(|p| p.exists())
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| NAME.to_string())
+/// MCP stdio 桥程序 + 附加参数。
+/// Windows：与主程序同目录的 mcp.exe（缺失时回退裸文件名，供用户自行修正）；
+/// 其他平台：主程序自身 + `--mcp-bridge`（AppImage 下优先用 $APPIMAGE 外观路径）。
+fn mcp_stdio_spec() -> (String, Vec<String>) {
+    #[cfg(windows)]
+    {
+        let path = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("mcp.exe")))
+            .filter(|p| p.exists())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "mcp.exe".to_string());
+        (path, Vec::new())
+    }
+    #[cfg(not(windows))]
+    {
+        // AppImage 运行时当前 exe 在 /tmp/.mount_*/ 下，重启后路径变化；APPIMAGE
+        // 环境变量指向用户手里的 .AppImage 本体，配置给 MCP 客户端后跨重启稳定。
+        let path = std::env::var_os("APPIMAGE")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.is_file())
+            .or_else(|| std::env::current_exe().ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "tve-hub".to_string());
+        (path, vec!["--mcp-bridge".to_string()])
+    }
 }
 
 /// 错误文本 → 稳定错误码（外部客户端据此分支，不依赖中文散文；未知文本回 ERROR）。

@@ -14,6 +14,7 @@ export interface DevToolsInfo {
   url: string;
   mcp_url: string;
   stdio_command: string;
+  stdio_args: string[];
   token: string;
   protocol: string;
 }

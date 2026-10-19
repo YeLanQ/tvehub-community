@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": ["appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "category": "GraphicsAndDesign",
+    "shortDescription": "三维可视化编辑器与创意工坊",
+    "longDescription": "TvE Hub 是三维可视化编辑器与创意工坊：场景搭建、材质与着色器、动画、脚本、预览与多平台导出。"
+  }
+}

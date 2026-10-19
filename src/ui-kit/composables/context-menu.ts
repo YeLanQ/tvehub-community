@@ -4,6 +4,8 @@ export interface CtxMenuItem {
   label?: string;
   shortcut?: string;
   disabled?: boolean;
+  /** 悬停提示：禁用项用它说明「为什么不可用」 */
+  title?: string;
   danger?: boolean;
   separator?: boolean;
   header?: boolean;

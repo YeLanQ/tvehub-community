@@ -30,8 +30,10 @@ export interface DevToolsInfo {
   url: string;
   /** MCP HTTP 端点（http://127.0.0.1:<port>/mcp，同一端口） */
   mcp_url: string;
-  /** MCP stdio 桥程序路径（mcp.exe，与主程序同目录） */
+  /** MCP stdio 桥程序路径（Windows 为同目录 mcp.exe；其他平台为主程序自身） */
   stdio_command: string;
+  /** stdio 桥附加参数（其他平台为 ["--mcp-bridge"]，Windows 为空） */
+  stdio_args: string[];
   token: string;
   protocol: string;
 }
@@ -79,6 +81,20 @@ export interface RepoCategoryEntry {
   dir: string;
   /** 分类下的文件（按文件名排序） */
   files: RepoFileEntry[];
+}
+
+/** 单个平台能力：可用性 + 不可用原因（Rust 为单一事实源） */
+export interface PlatformCapability {
+  available: boolean;
+  reason?: string;
+}
+
+/** 平台能力表（Rust platform::PlatformCapabilities，camelCase） */
+export interface PlatformCapabilities {
+  os: string;
+  arch: string;
+  build: "debug" | "release";
+  features: Record<string, PlatformCapability>;
 }
 
 /** Tauri 资产命令封装 */
@@ -353,6 +369,8 @@ export const api = {
   openDevtools: () => invoke<void>("open_devtools"),
   /** 应用相关目录路径（名称有序；前端展示 + opener 打开） */
   devAppDirs: () => invoke<[string, string][]>("dev_app_dirs"),
+  /** 平台能力表（操作系统、构建类型、各功能可用性；仅桌面应用内有效） */
+  platformCapabilities: () => invoke<PlatformCapabilities>("platform_capabilities"),
 
   // ---------------------------------------------------------------------------
   // 开发者服务（控制服务器 + MCP）：启停 / 状态 / 命令回填 / 事件广播

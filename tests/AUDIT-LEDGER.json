@@ -150,5 +150,13 @@
     "reason": "delete_code_proto：safe_proto_file 守卫链",
     "date": "2026-09-21T20:23:03.808Z",
     "expires": "2027-09-21T20:23:03.808Z"
+  },
+  {
+    "rule": "exec.command",
+    "file": "src-tauri/src/trash.rs",
+    "sig": "9e017602d2",
+    "reason": "gio trash 固定 argv（trash/--/路径逐参数传入），无 shell，路径为待删除项本身；与 lanshare ipconfig 同型（设计内）",
+    "date": "2026-10-18T14:26:14.358Z",
+    "expires": "2027-10-18T14:26:14.357Z"
   }
 ]

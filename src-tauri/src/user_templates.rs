@@ -24,19 +24,15 @@ pub struct UserTemplateInfo {
     pub files: Vec<String>,
 }
 
-/// kind → exe 旁模板根目录（templates=项目模板 / exports-web=web 导出模板）
+/// kind → 模板根目录（templates=项目模板 / exports-web=web 导出模板）
+/// 资源根随安装形态变化：便携 = exe 旁 public/，只读安装目录 = 配置根/public/。
 fn template_root(kind: &str) -> Result<PathBuf, String> {
     let rel = match kind {
-        "templates" => "public/templates",
-        "exports-web" => "public/exports/web",
+        "templates" => "templates",
+        "exports-web" => "exports/web",
         _ => return Err(format!("未知模板类别: '{kind}'")),
     };
-    let exe = std::env::current_exe().map_err(|e| format!("定位程序目录失败: {e}"))?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "定位程序目录失败".to_string())?
-        .join(rel);
-    Ok(dir)
+    Ok(crate::appdirs::resource_root().join(rel))
 }
 
 /// 目录段守卫：不允许反斜杠、空段与 ..（dir 不允许含 /，rel 允许多级）

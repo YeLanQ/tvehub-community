@@ -78,7 +78,12 @@ git add CHANGELOG.md && git commit --amend --no-edit  # ③ 日期并回发版�
 
 - 直接指定版本的等价路径（如 0.1.4+1 → 1.0.0+1）：改事实源 → `pnpm version:sync` → 落锚三步；
   走 bump 则是 `version:bump major`（得 1.0.0，再生 CHANGELOG）+ `version:bump build`（得 +1）。
-- 发版前自检：`pnpm version:check && pnpm changelog --check`。
+- 出包（按目标系统原生构建，Tauri 不支持交叉编译）：
+  - Windows：`pnpm build:portable` → `src-tauri/target/release/`（主程序 + `mcp.exe`），
+    手工压便携包 `TvEHub.zip`（只含 exe 与 mcp.exe，不含 `public/`）；
+  - Linux：`pnpm build:linux` → `src-tauri/target/release/bundle/appimage/`（平台配置
+    `src-tauri/tauri.linux.conf.json` 只叠加 bundle，不重复 version/identifier）；
+  - 发版自检：`pnpm version:check && pnpm changelog --check`。
 
 已知坑（实证）：v0.1.4+1 的发版提交主题带括号后缀（`chore(version): v0.1.4+1（README…）`）
 → 正则不匹配且无同名 tag → 未成锚点，其后 126 个提交积压进未发布段。补救 = 补打同名 tag

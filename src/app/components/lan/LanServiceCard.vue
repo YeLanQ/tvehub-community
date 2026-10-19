@@ -6,7 +6,7 @@
  * 交互约定：每个字段失焦或选项变更即提交补丁（后端补丁式写入，没有「保存」按钮）；
  * 端口与网卡变更会重启监听，故改动前把控件禁用一小会儿（busy）。
  */
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import LanQrCode from "./LanQrCode.vue";
 import {
@@ -18,7 +18,12 @@ import {
 } from "../../lib/lan-share";
 import { toastErr, toastOk } from "../../lib/toast";
 import { isTauri } from "../../../lib/tauri-env";
+import { capability, ensurePlatformCapabilities } from "../../lib/platform-capabilities";
 import "../../../styles/components/lan-service.scss";
+
+/** 多网卡枚举能力（Linux 仅默认路由地址；服务本身可用） */
+const lanMultiNic = computed(() => capability("lanMultiNic"));
+onMounted(() => void ensurePlatformCapabilities());
 
 const config = computed(() => lanShare.status?.config ?? null);
 const running = computed(() => lanShare.status?.running ?? false);
@@ -147,7 +152,8 @@ async function openInBrowser(url: string): Promise<void> {
               {{ opt.label }}
             </option>
           </select>
-          <span class="lan-field-hint">默认绑定全部网卡；指定网卡后只在对应网络可访问</span>
+          <span v-if="lanMultiNic.available" class="lan-field-hint">默认绑定全部网卡；指定网卡后只在对应网络可访问</span>
+          <span v-else class="lan-field-hint">{{ lanMultiNic.reason }}（仍可绑定全部网卡）</span>
         </label>
 
         <label class="lan-field">

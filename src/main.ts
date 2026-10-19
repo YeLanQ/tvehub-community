@@ -15,9 +15,13 @@ import { restoreDevToolsStatus, ensureCmdListener } from "./app/lib/devtools";
 import { api } from "./lib/api";
 import { getBootLoadingStore } from "./app/stores/boot-loading";
 import { installThemeSync } from "./app/lib/theme-colors";
+import { ensurePlatformCapabilities } from "./app/lib/platform-capabilities";
 import type { WindowProjectPayload } from "./app/lib/window-handoff";
 
 debugLog("boot", "app script started");
+
+// 平台能力（操作系统/构建类型/功能可用性）：编辑器窗口启动即拉取，供路径语义与置灰使用
+void ensurePlatformCapabilities();
 
 // 主题颜色自定义：恢复持久化覆盖 + 跟随首页偏好里的实时修改
 installThemeSync();

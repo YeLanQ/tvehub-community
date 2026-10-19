@@ -14,6 +14,7 @@
 | `logStore`（log.ts:29，直接导出） | lines（上限 500 条环形截断） | log(level, text, tag?)、clear()；level: info/warn/error/engine/success |
 | `getBootLoadingStore()`（boot-loading.ts:79） | 启动遮罩进度状态 | 见源文件 |
 | `resetEditorEngine()`（editor.ts:244） | — | 销毁引擎单例（仅供 editorService.disposeEditor 调用） |
+| 平台能力（src/app/lib/platform-capabilities.ts） | os/arch/build + features（Rust `platform_capabilities` 下发；未加载时按可用 fail-open） | ensurePlatformCapabilities()、capability(id)、isWindowsPlatform()；WebGPU 运行时能力见 src/app/lib/gpu-capability.ts（gpuGate / gpuSupport） |
 
 跨窗口 store（graph/whiteboard）见 stores-windows.md。
 

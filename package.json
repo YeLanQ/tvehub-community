@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:portable": "tauri build",
+    "build:linux": "node scripts/check-platform.mjs linux && tauri build",
     "smoke": "node scripts/smoke/runner.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

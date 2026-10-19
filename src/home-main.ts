@@ -7,9 +7,13 @@ import HomeView from "./app/components/HomeView.vue";
 import { isTauri } from "./lib/tauri-env";
 import { debugLog, debugError } from "./lib/debug-log";
 import { installThemeSync } from "./app/lib/theme-colors";
+import { ensurePlatformCapabilities } from "./app/lib/platform-capabilities";
 import "./styles/global.scss";
 
 debugLog("boot", "home window script started");
+
+// 平台能力（功能置灰的数据源）：首页启动即拉取
+void ensurePlatformCapabilities();
 
 // 主题颜色自定义：恢复持久化覆盖 + 跟随其他窗口的实时修改
 installThemeSync();

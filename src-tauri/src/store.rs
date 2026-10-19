@@ -16,16 +16,29 @@ fn app_prefs_file_path(app: &AppHandle) -> PathBuf {
     appdirs::config_root(app).join("prefs.json")
 }
 
-/// 规范化最近项目路径的写法：分隔符统一为反斜杠、去掉结尾分隔符
-/// （界面文件夹选择器给反斜杠，远程 devtools/手输可能给正斜杠，否则同一项目存两条）
+/// 规范化最近项目路径的写法：
+/// - Windows：分隔符统一为反斜杠、去掉结尾分隔符（文件夹选择器给反斜杠，
+///   远程 devtools/手输可能给正斜杠，否则同一项目存两条）；
+/// - 其他平台：只去结尾正斜杠（反斜杠在 POSIX 是合法文件名字符，不能转换）。
+#[cfg(windows)]
 fn normalize_recent_path(path: &str) -> String {
-    let p = path.replace('/', "\\");
-    p.trim_end_matches('\\').to_string()
+    path.replace('/', "\\").trim_end_matches('\\').to_string()
 }
 
-/// 最近项目路径的去重比较键（分隔符与大小写不敏感；Windows 路径不区分大小写）
-fn recent_path_key(path: &str) -> String {
+#[cfg(not(windows))]
+fn normalize_recent_path(path: &str) -> String {
+    path.trim_end_matches('/').to_string()
+}
+
+/// 最近项目路径的去重比较键：Windows 大小写不敏感；POSIX 大小写敏感。
+#[cfg(windows)]
+pub(crate) fn recent_path_key(path: &str) -> String {
     normalize_recent_path(path).to_ascii_lowercase()
+}
+
+#[cfg(not(windows))]
+pub(crate) fn recent_path_key(path: &str) -> String {
+    normalize_recent_path(path)
 }
 
 /// 读取应用级偏好文件（JSON 对象）；不存在/损坏返回空对象
