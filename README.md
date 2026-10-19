@@ -130,10 +130,11 @@ pnpm build:linux
 # 产物：src-tauri/target/release/bundle/appimage/*.AppImage
 ```
 
-- AppImage 挂载点只读：内置资源与创意工坊目录释放到 `~/.config/TvE.Hub/public/`（便携包仍是 exe 同级 `public/`）；
+- AppImage 挂载点只读：内置资源释放到 `~/.config/TvE.Hub/public/`（便携包仍是 exe 同级 `public/`）；创意工坊目录在该资源根下按需创建；
 - 系统回收站走 `gio trash`，无 gio 时回落 XDG Trash；
 - MCP stdio 桥由主程序 `--mcp-bridge` 提供，不依赖伴生可执行文件；
-- 打包失败时 `build:linux` 会输出 linuxdeploy 的完整日志；常见依赖见上（`squashfs-tools`、`patchelf`、`librsvg2-common`、`gdk-pixbuf2.0-bin`）。
+- 打包失败时 `build:linux` 会输出 linuxdeploy 的完整日志；常见依赖见上（`squashfs-tools`、`patchelf`、`librsvg2-common`、`gdk-pixbuf2.0-bin`）；
+- **Linux 渲染兼容**：默认 `WEBKIT_DISABLE_DMABUF_RENDERER=1`；NVIDIA 专有驱动 + Wayland 自动关闭 explicit sync；无 DRM 渲染节点（虚拟机/软件渲染）自动设置 `WEBKIT_DISABLE_COMPOSITING_MODE=1`；软件渲染/未知 GPU 时编辑器网格改用着色器平面，避免 GL_LINES 在缩放时乱飞。`debug.log` 会写 `[linux]` 与 `[gpu]` 诊断行。
 
 ## 项目结构
 

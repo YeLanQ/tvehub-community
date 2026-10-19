@@ -14,7 +14,7 @@ describe("平台能力（浏览器环境）", () => {
 
   it("未加载时按可用处理（fail-open，避免误禁用）", () => {
     expect(capability("trash").available).toBe(true);
-    expect(capability("selfUpdate").available).toBe(true);
+    expect(capability("lanMultiNic").available).toBe(true);
     expect(platformOs()).toBe("unknown");
   });
 
@@ -22,8 +22,6 @@ describe("平台能力（浏览器环境）", () => {
     await ensurePlatformCapabilities();
     for (const id of [
       "trash",
-      "selfUpdate",
-      "selfUpdateApply",
       "lanMultiNic",
       "mcpBridge",
       "gpuAcceleration",

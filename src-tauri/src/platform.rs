@@ -66,26 +66,6 @@ pub fn capabilities() -> PlatformCapabilities {
         },
     );
 
-    // 应用内更新：发行资产与安装语义都是 Windows 便携包
-    features.insert(
-        "selfUpdate".to_string(),
-        if cfg!(windows) {
-            Capability::yes()
-        } else {
-            Capability::no("当前平台不支持应用内更新，请从发行页手动下载新版本")
-        },
-    );
-    features.insert(
-        "selfUpdateApply".to_string(),
-        if !cfg!(windows) {
-            Capability::no("当前平台不支持应用内更新，请从发行页手动下载新版本")
-        } else if cfg!(debug_assertions) {
-            Capability::no("开发构建不支持应用更新")
-        } else {
-            Capability::yes()
-        },
-    );
-
     // 多网卡枚举：目前只有 Windows 解析 ipconfig；其他平台只有默认路由地址
     features.insert(
         "lanMultiNic".to_string(),
@@ -147,14 +127,7 @@ mod tests {
     #[test]
     fn reports_all_known_features() {
         let caps = capabilities();
-        for id in [
-            "trash",
-            "selfUpdate",
-            "selfUpdateApply",
-            "lanMultiNic",
-            "mcpBridge",
-            "gpuAcceleration",
-        ] {
+        for id in ["trash", "lanMultiNic", "mcpBridge", "gpuAcceleration"] {
             assert!(caps.features.contains_key(id), "缺能力项: {id}");
         }
         assert_eq!(caps.os, std::env::consts::OS);
@@ -179,9 +152,7 @@ mod tests {
     fn windows_desktop_capabilities() {
         let caps = capabilities();
         assert!(caps.features["trash"].available);
-        assert!(caps.features["selfUpdate"].available);
         assert!(caps.features["lanMultiNic"].available);
-        assert_eq!(caps.features["selfUpdateApply"].available, !cfg!(debug_assertions));
     }
 
     #[cfg(target_os = "linux")]
@@ -189,8 +160,6 @@ mod tests {
     fn linux_capabilities_disable_windows_only_features() {
         let caps = capabilities();
         assert!(caps.features["trash"].available, "Linux 回收站由 XDG 实现");
-        assert!(!caps.features["selfUpdate"].available);
-        assert!(!caps.features["selfUpdateApply"].available);
         assert!(!caps.features["lanMultiNic"].available);
         assert!(caps.features["mcpBridge"].available, "主程序内置 MCP 桥");
         assert_eq!(

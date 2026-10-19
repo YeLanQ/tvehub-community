@@ -97,7 +97,7 @@
 | `settings.changed` | 场景设置补丁/撤销 | `{root, rel, settings, patch?, source}` |
 | `scene.saved` | `scene.save` 落盘后 | `{revision, dirty:false}` |
 | `selection.changed` | 选中变化 | `{nodeId}` |
-| `material.changed` / `shader.changed` / `model.changed` / `splat.changed` / `animation.changed` | 对应缓存刷新 | `{rel}` 或 `{nodeId}` |
+| `material.changed` / `shader.changed` / `model.changed` / `animation.changed` | 对应缓存刷新 | `{rel}` 或 `{nodeId}` |
 | `asset.changed` | 外部文件监听命中（不含 `.scene`） | `{root, paths, kinds, refreshed, pruned, skipped}` |
 
 实现约定（客户端可依赖）：

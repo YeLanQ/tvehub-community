@@ -10,16 +10,12 @@ import { isTauri } from "../../lib/tauri-env";
 
 export type CapabilityId =
   | "trash"
-  | "selfUpdate"
-  | "selfUpdateApply"
   | "lanMultiNic"
   | "mcpBridge"
   | "gpuAcceleration";
 
 const ALL_IDS: CapabilityId[] = [
   "trash",
-  "selfUpdate",
-  "selfUpdateApply",
   "lanMultiNic",
   "mcpBridge",
   "gpuAcceleration",

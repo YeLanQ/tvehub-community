@@ -49,12 +49,12 @@
 | kind | 说明 |
 | --- | --- |
 | `group` | 空组/容器 |
-| `mesh` | 网格（`subtype` 为几何/模型/数据/程序化） |
-| `light` | 灯光（`subtype` 为 point/directional/spot/ambient，太阳光版本为 sun） |
+| `mesh` | 网格（`subtype` 为几何/模型/数据） |
+| `light` | 灯光（`subtype` 为 point/directional/spot/ambient） |
 | `camera` | 相机 |
 | `skybox` | 天空盒（`subtype`：procedural / cube；`cubemap` 是 `cube` 别名） |
 | `fog` | 雾（`subtype`：linear / exp2 / height；`exponential` 是 `exp2` 别名） |
-| `audio` / `particle` / `terrain` / `nav` / `logic` / `ui` / `script` / `model` / `sprite` / `splat` | 对应节点类型 |
+| `audio` / `particle` / `terrain` / `nav` / `logic` / `ui` / `script` / `model` | 对应节点类型 |
 
 要点：
 
