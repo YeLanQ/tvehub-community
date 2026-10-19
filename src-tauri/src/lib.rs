@@ -12,6 +12,7 @@ mod devtools;
 mod internal;
 mod js_minify;
 mod lanshare;
+pub mod linux_compat;
 pub mod mcp_bridge;
 mod model_bin;
 mod platform;
@@ -975,6 +976,26 @@ pub fn run() {
             if !cfg!(debug_assertions) {
                 if let Err(e) = extract_builtin_archive(&appdirs::resource_root()) {
                     eprintln!("[internal] 内置资源释放失败: {e}");
+                }
+            }
+            // Linux 图形栈诊断（会话类型/GPU 厂商/兼容开关实际取值）：用户反馈
+            // 黑块、闪边、花屏时，debug.log 里这一行就是环境事实。
+            #[cfg(target_os = "linux")]
+            {
+                let line = format!("[linux] {}", linux_compat::diagnostics());
+                eprintln!("{line}");
+                let dir = appdirs::config_root(app.handle());
+                let _ = std::fs::create_dir_all(&dir);
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(dir.join("debug.log"))
+                {
+                    use std::io::Write;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    let _ = writeln!(f, "[{}] {}", now.as_secs(), line);
                 }
             }
             // 先一次性迁移旧系统目录数据（若有），再迁移旧键名，最后启动依赖配置根的服务
