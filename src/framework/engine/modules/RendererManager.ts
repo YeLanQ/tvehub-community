@@ -36,6 +36,64 @@ export interface RenderStats {
   programs: number;
   meshes: number;
   vertices: number;
+  /** 实际生效的渲染后端（webgl | webgpu）——与项目设置可能不同（回退时） */
+  backend: "webgl" | "webgpu";
+  /** 实际生效的透明渲染策略（oit 仅在 WebGPU 下可能为真） */
+  transparency: "sorted" | "oit";
+  /** GPU 厂商（WebKit 可能屏蔽为空） */
+  gpuVendor: string;
+  /** GPU 渲染器字符串（llvmpipe/SwiftShader = 软件光栅化） */
+  gpuRenderer: string;
+  /** 硬件/软件判定：true=软件，false=硬件，null=驱动屏蔽了字符串无法判断 */
+  software: boolean | null;
+}
+
+/** GPU 硬件/软件识别结果 */
+export interface GpuRendererInfo {
+  vendor: string;
+  renderer: string;
+  software: boolean | null;
+}
+
+export function detectSoftware(renderer: string): boolean | null {
+  const s = renderer.toLowerCase();
+  if (!s) return null;
+  // WebKitGTK 为防指纹会把 renderer 伪造成 "Apple GPU"/"WebKit WebGL"：
+  // 这两个值不代表真实硬件，按「无法判断」处理，不误报为硬件。
+  if (s.includes("apple gpu") || s.includes("webkit webgl")) return null;
+  return /llvmpipe|softpipe|lavapipe|swiftshader|software|microsoft basic render/.test(s);
+}
+
+async function readGpuInfo(device: RHIDevice): Promise<GpuRendererInfo> {
+  if (device.kind === "webgl") {
+    const gl = (device.native as THREE.WebGLRenderer).getContext();
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const vendor = ext
+      ? String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL))
+      : String(gl.getParameter(gl.VENDOR));
+    const renderer = ext
+      ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
+      : String(gl.getParameter(gl.RENDERER));
+    return { vendor, renderer, software: detectSoftware(renderer) };
+  }
+  // WebGPU：three 的 backend 持有 adapter（字段随版本可选）
+  const adapter = (
+    device.native as {
+      backend?: {
+        adapter?: {
+          info?: { vendor?: string; architecture?: string; description?: string; device?: string };
+        };
+      };
+    }
+  ).backend?.adapter;
+  const info = adapter?.info;
+  if (info) {
+    const renderer = [info.description, info.architecture, info.device]
+      .filter((x): x is string => !!x)
+      .join(" ");
+    return { vendor: info.vendor ?? "", renderer, software: detectSoftware(renderer) };
+  }
+  return { vendor: "", renderer: "", software: null };
 }
 
 /**
@@ -73,6 +131,14 @@ export class RendererManager {
   private pipeline!: RPIPipeline;
   /** 实际生效的后端（webgl 或 webgpu），供日志/诊断与材质策略分派 */
   activeBackend: RendererBackend | "webgpu" = "webgl";
+  /** GPU 硬件/软件信息（挂载后异步识别；面板与 debug.log 共用） */
+  private gpuInfo: GpuRendererInfo = { vendor: "", renderer: "", software: null };
+  /** GPU 信息（挂载完成后可读；未识别时 software=null） */
+  getGpuInfo(): GpuRendererInfo {
+    return this.gpuInfo;
+  }
+  /** 透明渲染策略（项目设置值；实际生效还被后端约束——WebGL 下恒为排序混合） */
+  transparencyMode: "sorted" | "oit" = "sorted";
   /** 原始渲染设备载荷（RHI native；KTX2 压缩纹理格式探测等需要具体类型） */
   get raw(): unknown {
     return this.device?.native;
@@ -156,6 +222,7 @@ export class RendererManager {
       onShaderError: (e) => this.shaderErrorCb?.(e.message),
     });
     this.activeBackend = this.device.kind;
+    this.gpuInfo = await readGpuInfo(this.device);
     this.pipeline = createRPIPipeline(this.device);
     if (this.activeBackend !== "webgl") {
       console.info("[renderer] 渲染后端: WebGPU（WebGPU 不可用时 three 自动回退 WebGL2）");
@@ -480,6 +547,13 @@ export class RendererManager {
       programs: info?.programs ?? 0,
       meshes: this.statsMeshes,
       vertices: this.statsVertices,
+      backend: this.activeBackend === "webgpu" ? "webgpu" : "webgl",
+      // OIT 只有 WebGPU 后端真正启用；其余情况一律排序混合（RHI 侧同一口径）
+      transparency:
+        this.transparencyMode === "oit" && this.activeBackend === "webgpu" ? "oit" : "sorted",
+      gpuVendor: this.gpuInfo.vendor,
+      gpuRenderer: this.gpuInfo.renderer,
+      software: this.gpuInfo.software,
     };
   }
 

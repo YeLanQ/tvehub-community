@@ -13,7 +13,8 @@ export type CapabilityId =
   | "selfUpdate"
   | "selfUpdateApply"
   | "lanMultiNic"
-  | "mcpBridge";
+  | "mcpBridge"
+  | "gpuAcceleration";
 
 const ALL_IDS: CapabilityId[] = [
   "trash",
@@ -21,6 +22,7 @@ const ALL_IDS: CapabilityId[] = [
   "selfUpdateApply",
   "lanMultiNic",
   "mcpBridge",
+  "gpuAcceleration",
 ];
 
 /** 浏览器直开（无桌面后端）时的统一原因 */

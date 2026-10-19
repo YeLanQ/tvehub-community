@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { getEditorStore } from "../stores/editor";
 import type { RenderStats } from "../../framework/engine/modules/RendererManager";
+import { capability } from "../lib/platform-capabilities";
 import "../../styles/components/debug-stats-panel.scss";
 
 const { engine } = getEditorStore();
@@ -18,9 +19,27 @@ const stats = ref<RenderStats>({
   programs: 0,
   meshes: 0,
   vertices: 0,
+  backend: "webgl",
+  transparency: "sorted",
+  gpuVendor: "",
+  gpuRenderer: "",
+  software: null,
 });
 
 let timer = 0;
+
+/** Linux 无 DRM 渲染节点 = 确定软件渲染（比 WebGL 渲染器字符串更可靠） */
+const gpuCap = computed(() => capability("gpuAcceleration"));
+const gpuLabel = computed(() => {
+  if (!gpuCap.value.available) return "软件";
+  if (stats.value.software === true) return "软件";
+  if (stats.value.software === false) return "硬件";
+  return "未知";
+});
+const gpuTitle = computed(() => {
+  const detail = `${stats.value.gpuVendor || "厂商未知"} / ${stats.value.gpuRenderer || "渲染器未知"}`;
+  return gpuCap.value.available ? detail : `${detail}（${gpuCap.value.reason}）`;
+});
 
 onMounted(() => {
   timer = window.setInterval(() => {
@@ -57,6 +76,24 @@ function fmt(n: number): string {
     <div class="stat-row">
       <span class="stat-label">DrawCalls</span>
       <span class="stat-value">{{ stats.drawCalls }}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label" title="实际生效的渲染后端（可能与项目设置不同：WebGPU 不可用时回退 WebGL）">后端</span>
+      <span class="stat-value">{{ stats.backend === "webgpu" ? "WebGPU" : "WebGL" }}</span>
+    </div>
+    <div class="stat-row">
+      <span
+        class="stat-label"
+        title="GPU 硬件/软件判定：llvmpipe / SwiftShader 等为软件光栅化；WebKitGTK 为防指纹可能屏蔽渲染器字符串，此时显示未知"
+      >GPU</span>
+      <span
+        class="stat-value"
+        :title="gpuTitle"
+      >{{ gpuLabel }}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label" title="实际生效的透明渲染策略：排序混合 / 顺序无关透明（OIT，需 WebGPU；项目设置 → 显示与运行 → 透明渲染）">透明</span>
+      <span class="stat-value">{{ stats.transparency === "oit" ? "OIT" : "排序" }}</span>
     </div>
     <div class="stat-row">
       <span class="stat-label">网格</span>

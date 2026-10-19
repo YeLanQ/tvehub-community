@@ -24,7 +24,7 @@ import {
 import type { Node } from "../prototype/Node";
 import { JsonRecord, type Vec3 } from "../prototype/types";
 import { ensureHeightFogChunk } from "../fog";
-import { RendererManager, type RendererBackend } from "./modules/RendererManager";
+import { RendererManager, type GpuRendererInfo, type RendererBackend } from "./modules/RendererManager";
 import { HelperSystem } from "./modules/HelperSystem";
 import { TerrainPaintController, type TerrainToolBrush } from "./modules/TerrainPaintController";
 export type { GizmoMode } from "./modules/GizmoController";
@@ -158,6 +158,8 @@ export interface EditorEvents extends Record<string, unknown> {
   "shader:error": { message: string };
   /** 模型资产解析状态变更（加载完成/失败/失效后广播；rel 为空串表示全部） */
   "model:changed": { rel: string };
+  /** GPU 硬件/软件识别（挂载完成后一次；software=null 表示驱动屏蔽了字符串） */
+  "renderer:info": GpuRendererInfo;
   /** 节点动画运行时变化（播放/暂停/图状态切换/参数写入） */
   "animation:changed": { nodeId: string };
   /** 音源节点运行时变化（绑定/加载完成/播放控制/数据写入） */

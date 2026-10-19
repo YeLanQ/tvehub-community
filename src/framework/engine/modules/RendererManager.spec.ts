@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RendererManager } from "./RendererManager";
+import { RendererManager, detectSoftware } from "./RendererManager";
 
 // 空闲降帧的活动信号判定（不 mount：纯时间戳 + 钩子聚合，无 WebGL 依赖）。
 // 渲染循环据 viewportActive 在空闲时降频（IDLE_FPS）、交互/活动内容恢复全速。
@@ -85,5 +85,30 @@ describe("RendererManager FPS 滑动窗口统计", () => {
     expect(rm.getStats().fps).toBe(2);
     rm.recordFrame(1251 + 251, false);
     expect(rm.getStats().fps).toBe(1);
+  });
+});
+describe("RendererManager GPU 软件渲染判定", () => {
+  it("Mesa 软件光栅化（llvmpipe/softpipe/lavapipe）判定为软件", () => {
+    expect(detectSoftware("llvmpipe (LLVM 15.0.7, 256 bits)")).toBe(true);
+    expect(detectSoftware("softpipe")).toBe(true);
+    expect(detectSoftware("lavapipe")).toBe(true);
+  });
+
+  it("ANGLE 的 SwiftShader 后端判定为软件", () => {
+    expect(
+      detectSoftware("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader)"),
+    ).toBe(true);
+  });
+
+  it("普通硬件渲染器判定为硬件", () => {
+    expect(detectSoftware("NVIDIA GeForce RTX 4060/PCIe/SSE2")).toBe(false);
+    expect(detectSoftware("AMD Radeon RX 7800 XT")).toBe(false);
+    expect(detectSoftware("Mesa Intel(R) UHD Graphics 770")).toBe(false);
+  });
+
+  it("WebKitGTK 屏蔽渲染器字符串时返回未知，不误报硬件", () => {
+    expect(detectSoftware("Apple GPU")).toBeNull();
+    expect(detectSoftware("WebKit WebGL")).toBeNull();
+    expect(detectSoftware("")).toBeNull();
   });
 });

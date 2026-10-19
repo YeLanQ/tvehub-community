@@ -106,6 +106,26 @@ pub fn capabilities() -> PlatformCapabilities {
         },
     );
 
+    // GPU 硬件加速：Linux 以 DRM 渲染节点为准（无 renderD* = 虚拟机/软件渲染）。
+    // 其它平台不在此探测（由渲染器在挂载后读取 WebGL renderer 字符串判断）。
+    features.insert(
+        "gpuAcceleration".to_string(),
+        {
+            #[cfg(target_os = "linux")]
+            {
+                if crate::linux_compat::has_drm_render_node() {
+                    Capability::yes()
+                } else {
+                    Capability::no("未检测到 DRM 渲染节点，当前为软件渲染（建议把项目抗锯齿设为「无」）")
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Capability::yes()
+            }
+        },
+    );
+
     PlatformCapabilities {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
@@ -127,7 +147,14 @@ mod tests {
     #[test]
     fn reports_all_known_features() {
         let caps = capabilities();
-        for id in ["trash", "selfUpdate", "selfUpdateApply", "lanMultiNic", "mcpBridge"] {
+        for id in [
+            "trash",
+            "selfUpdate",
+            "selfUpdateApply",
+            "lanMultiNic",
+            "mcpBridge",
+            "gpuAcceleration",
+        ] {
             assert!(caps.features.contains_key(id), "缺能力项: {id}");
         }
         assert_eq!(caps.os, std::env::consts::OS);
@@ -166,5 +193,10 @@ mod tests {
         assert!(!caps.features["selfUpdateApply"].available);
         assert!(!caps.features["lanMultiNic"].available);
         assert!(caps.features["mcpBridge"].available, "主程序内置 MCP 桥");
+        assert_eq!(
+            caps.features["gpuAcceleration"].available,
+            crate::linux_compat::has_drm_render_node(),
+            "GPU 加速能力以 DRM 渲染节点为准"
+        );
     }
 }

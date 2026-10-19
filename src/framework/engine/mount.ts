@@ -33,6 +33,8 @@ export async function mountEditorEngine(
   // 挂载期间（渲染器异步初始化）可能已被 dispose（如用户在就绪前点了“关闭”）：
   // 此时渲染器已释放，直接终止后续初始化，避免在已销毁的引擎上补建 gizmo/监听。
   if (engine.disposed) return;
+  // GPU 硬件/软件识别结果（debug.log 与性能面板的数据源）
+  engine.events.emit("renderer:info", engine.renderer.getGpuInfo());
   initGizmo(engine);
   // WebGPU 后端：粒子改注入 TSL 节点材质工厂（GLSL ShaderMaterial 不参与渲染），
   // 等待工厂就绪后再装载场景

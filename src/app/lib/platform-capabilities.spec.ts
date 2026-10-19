@@ -20,7 +20,14 @@ describe("平台能力（浏览器环境）", () => {
 
   it("非 Tauri 环境全部不可用并给出统一原因", async () => {
     await ensurePlatformCapabilities();
-    for (const id of ["trash", "selfUpdate", "selfUpdateApply", "lanMultiNic", "mcpBridge"] as const) {
+    for (const id of [
+      "trash",
+      "selfUpdate",
+      "selfUpdateApply",
+      "lanMultiNic",
+      "mcpBridge",
+      "gpuAcceleration",
+    ] as const) {
       const cap = capability(id);
       expect(cap.available).toBe(false);
       expect(cap.reason).toBe(DESKTOP_ONLY_REASON);

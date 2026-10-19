@@ -3,6 +3,7 @@ import { EditorEngine } from "../../framework/engine/EditorEngine";
 import type { Node } from "../../framework/prototype/Node";
 import { logStore } from "./log";
 import { animEditMode } from "../lib/anim-edit-mode";
+import { debugLog } from "../../lib/debug-log";
 
 export type ViewMode = "scene" | "layout" | "preview" | "script";
 
@@ -106,6 +107,18 @@ export function getEditorStore(): EditorStore {
   engine.events.on("material:changed", bump);
   engine.events.on("shader:changed", bump);
   engine.events.on("model:changed", bump);
+  engine.events.on("renderer:info", (info) => {
+    const label =
+      info.software === true
+        ? "软件渲染"
+        : info.software === false
+          ? "硬件渲染"
+          : "无法判断（驱动屏蔽了 GPU 信息）";
+    debugLog(
+      "gpu",
+      `厂商=${info.vendor || "未知"} 渲染器=${info.renderer || "未知"} → ${label}`,
+    );
+  });
   engine.events.on("animation:changed", bump);
   engine.events.on("audio:changed", bump);
   engine.events.on("physics:changed", bump);

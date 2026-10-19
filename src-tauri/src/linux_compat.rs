@@ -42,6 +42,17 @@ fn gpu_vendor() -> String {
     "unknown".to_string()
 }
 
+/// 是否存在 DRM 渲染节点（renderD*）：没有 = 无 GPU 加速（虚拟机/纯软件会话）
+#[cfg(target_os = "linux")]
+pub(crate) fn has_drm_render_node() -> bool {
+    std::fs::read_dir("/dev/dri")
+        .map(|rd| {
+            rd.flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with("renderD"))
+        })
+        .unwrap_or(false)
+}
+
 /// 应用兼容开关（仅 Linux；其它平台 no-op）
 pub fn apply() {
     #[cfg(target_os = "linux")]
@@ -59,6 +70,13 @@ pub fn apply() {
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
+        // 无 DRM 渲染节点（虚拟机/纯软件环境）：加速合成本身也走软件实现，
+        // 反而更容易出现三角形残帧/闪边；改走非加速合成路径。
+        if !has_drm_render_node()
+            && std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none()
+        {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
     }
 }
 
@@ -67,12 +85,15 @@ pub fn diagnostics() -> String {
     #[cfg(target_os = "linux")]
     {
         format!(
-            "session={} desktop={} gpu={} nvidia_driver={} dmabuf={} nv_explicit_sync={}",
+            "session={} desktop={} gpu={} nvidia_driver={} render_node={} dmabuf={} compositing={} nv_explicit_sync={}",
             std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unknown".to_string()),
             std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
             gpu_vendor(),
             nvidia_driver(),
+            has_drm_render_node(),
             std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER")
+                .unwrap_or_else(|_| "unset".to_string()),
+            std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE")
                 .unwrap_or_else(|_| "unset".to_string()),
             std::env::var("__NV_DISABLE_EXPLICIT_SYNC").unwrap_or_else(|_| "unset".to_string()),
         )
