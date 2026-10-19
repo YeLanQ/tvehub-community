@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RendererManager, detectSoftware } from "./RendererManager";
+import { RendererManager, createShaderGrid, detectSoftware } from "./RendererManager";
 
 // 空闲降帧的活动信号判定（不 mount：纯时间戳 + 钩子聚合，无 WebGL 依赖）。
 // 渲染循环据 viewportActive 在空闲时降频（IDLE_FPS）、交互/活动内容恢复全速。
@@ -87,6 +87,29 @@ describe("RendererManager FPS 滑动窗口统计", () => {
     expect(rm.getStats().fps).toBe(1);
   });
 });
+describe("编辑器网格（软件渲染安全）", () => {
+  it("着色器网格用平面 + 片元线条，不使用 GL 线段图元", () => {
+    const grid = createShaderGrid() as unknown as {
+      name: string;
+      isMesh: boolean;
+      geometry: { type: string };
+      material: {
+        isShaderMaterial?: boolean;
+        transparent?: boolean;
+        depthWrite?: boolean;
+        fragmentShader?: string;
+      };
+    };
+    expect(grid.name).toBe("__grid");
+    expect(grid.isMesh).toBe(true);
+    expect(grid.geometry.type).toBe("PlaneGeometry");
+    expect(grid.material.isShaderMaterial).toBe(true);
+    expect(grid.material.transparent).toBe(true);
+    expect(grid.material.depthWrite).toBe(false);
+    expect(grid.material.fragmentShader).toContain("fwidth");
+  });
+});
+
 describe("RendererManager GPU 软件渲染判定", () => {
   it("Mesa 软件光栅化（llvmpipe/softpipe/lavapipe）判定为软件", () => {
     expect(detectSoftware("llvmpipe (LLVM 15.0.7, 256 bits)")).toBe(true);

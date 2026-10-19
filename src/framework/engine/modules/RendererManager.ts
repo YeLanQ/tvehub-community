@@ -12,6 +12,75 @@ export type RendererBackend = "webgl" | "webgpu" | "auto";
 /** 编辑器视口默认清屏色（无天空盒节点时的场景背景） */
 export const EDITOR_BACKGROUND_COLOR = 0x141414;
 
+/**
+ * 编辑器地面网格（软件渲染安全版）：用平面 + 片元着色器画网格线，而不是
+ * THREE.GridHelper 的 GL_LINES。软件光栅化（llvmpipe/SwiftShader）在缩放时
+ * 对线段裁剪/光栅化不稳定，会出现线条乱飞、丢失与三角形残片；着色器版只用
+ * 一个四边形，在所有后端/驱动上表现一致。
+ */
+export function createShaderGrid(): THREE.Mesh {
+  const half = 20;
+  const geometry = new THREE.PlaneGeometry(half * 2, half * 2, 1, 1);
+  geometry.rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    // 与地面共面时向相机方向偏移，避免 z-fighting（编辑器辅助网格画在场景之上）
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+    uniforms: {
+      uMajor: { value: new THREE.Color(0x3f3f3f) },
+      uMinor: { value: new THREE.Color(0x262626) },
+      uHalf: { value: half },
+    },
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorld = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vWorld;
+      uniform vec3 uMajor;
+      uniform vec3 uMinor;
+      uniform float uHalf;
+
+      float lineMask(vec2 p, float stepSize) {
+        vec2 coord = p / stepSize;
+        vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+        return 1.0 - min(min(grid.x, grid.y), 1.0);
+      }
+
+      void main() {
+        vec2 p = vWorld.xz;
+        float minor = lineMask(p, 1.0);
+        // 过原点的两条主线（对应 GridHelper 的第一种颜色）
+        vec2 axisDist = abs(p) / fwidth(p);
+        float axis = 1.0 - min(min(axisDist.x, axisDist.y), 1.0);
+        float fade = 1.0 - smoothstep(uHalf - 2.0, uHalf, length(p));
+        float alpha = max(minor * 0.5, axis) * fade;
+        if (alpha < 0.003) discard;
+        gl_FragColor = vec4(mix(uMinor, uMajor, step(0.5, axis)), alpha);
+      }
+    `,
+  });
+  const grid = new THREE.Mesh(geometry, material);
+  grid.name = "__grid";
+  grid.renderOrder = -1;
+  grid.frustumCulled = false;
+  return grid;
+}
+
+/** GL 线段版网格（硬件 WebGL / WebGPU 使用；保持原有视觉） */
+function createLineGrid(): THREE.GridHelper {
+  const grid = new THREE.GridHelper(40, 40, 0x3f3f3f, 0x262626);
+  grid.name = "__grid";
+  return grid;
+}
+
 /** 空闲判定窗口：最后一次交互/场景活动后该毫秒数内保持全速渲染 */
 const IDLE_DELAY_MS = 800;
 /** 空闲视口帧率上限：视口静止（无交互且无活动内容）时的降频渲染目标 */
@@ -280,9 +349,10 @@ export class RendererManager {
     dom.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
     dom.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
 
-    const grid = new THREE.GridHelper(40, 40, 0x3f3f3f, 0x262626);
-    grid.name = "__grid";
-    this.scene.add(grid);
+    // 软件光栅化（llvmpipe/SwiftShader）下 GL_LINES 缩放时不稳定：
+    // 网格改用着色器平面；硬件 WebGL / WebGPU 保持 GridHelper 原视觉。
+    const useShaderGrid = this.activeBackend === "webgl" && this.gpuInfo.software !== false;
+    this.scene.add(useShaderGrid ? createShaderGrid() : createLineGrid());
 
     this.registerCamera(this.camera);
     this.activeCamera = this.camera;
@@ -523,6 +593,8 @@ export class RendererManager {
       let vertices = 0;
       this.scene.traverse((o) => {
         const mesh = o as THREE.Mesh;
+        // 编辑器辅助网格（着色器平面）不参与场景统计
+        if (mesh.name === "__grid") return;
         if (mesh.isMesh && mesh.geometry) {
           const pos = mesh.geometry.getAttribute("position");
           if (pos) {
