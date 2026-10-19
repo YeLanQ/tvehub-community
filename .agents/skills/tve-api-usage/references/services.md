@@ -8,7 +8,7 @@
 
 | 方法 | 规则要点 |
 |---|---|
-| `createFolder / rename / duplicate / remove / moveTo` | 内置目录（internal/…）与项目固定目录（assets/src）只读保护（isProtectedAsset/isInternalAsset）；rename/moveTo 成功后 `followSceneMove` 跟随改写场景引用与 mainScene 配置 |
+| `createFolder / rename / duplicate / remove / moveTo` | 内置目录（internal/…）与项目固定目录（assets/src）只读保护（isProtectedAsset/isInternalAsset）；rename/moveTo 成功后 `followSceneMove` 跟随改写场景指针与 mainScene 配置，且后端随动改写引用旧路径的全部文档（见 facade-assets.md 的 AssetMoveResult），`followAssetRefsRemap` 打自写标记并失效引擎缓存重读 |
 | `importPaths(root, destDir, sourcePaths)` | 拒绝导入到 internal 与 src/ |
 | `createSceneAsset / createAnimAsset / createPrefabAsset / createScriptAsset` | 模板注入（internal/templates）；目录内去重（uniqueRel）；脚本固定 src/ 目录、工坊原型原样落盘 |
 | `createMaterialAsset / createShaderAsset / createShaderFromSource` | 默认挂内置 PBR；kind 经 normalizeShaderKind |

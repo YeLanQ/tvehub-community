@@ -2,7 +2,7 @@
 // 命名去重与只读保护等规则集中于此；不持有 reactive 状态（资产列表快照经参数传入），
 // 落盘成功后由调用方（assets store）重扫列表。lib 数据门面（api）是本层唯一 IPC 出口。
 
-import { api, type AssetEntry } from "../../lib/api";
+import { api, type AssetEntry, type AssetMoveResult } from "../../lib/api";
 import { isInternalAsset } from "../../lib/internal-assets";
 import {
   DEFAULT_SHADER_REL,
@@ -27,6 +27,8 @@ import { sanitizeAssetStem } from "../lib/materials";
 import { isProtectedAsset } from "../lib/asset-guards";
 import { remapAssetPath } from "../lib/asset-paths";
 import { syncMainSceneAfterMove } from "../lib/project-settings";
+import { refreshProjectAssets } from "./asset-refresh";
+import { markAssetSelfWrite, markSceneSelfWrite } from "./fs-watch";
 import { getProjectStore } from "../stores/project";
 import { logStore } from "../stores/log";
 
@@ -61,6 +63,29 @@ export async function followSceneMove(root: string, fromRel: string, toRel: stri
   const next = remapAssetPath(projectStore.sceneRel, fromRel, toRel);
   if (next) projectStore.setSceneRel(next);
   await syncMainSceneAfterMove(root, fromRel, toRel);
+}
+
+/**
+ * 移动/重命名后的引用随动善后（后端已改写磁盘与打开会话并广播 replace）：
+ * - 自写抑制：文件监听会把这次应用自身的写盘当外部修改推回（.mat 重复刷新、
+ *   打开中场景误弹「外部修改」确认框），先打标；
+ * - 缓存失效重读：被改写文档（.mat/.texcube/模型）、旧路径（已不在原位，清缓存）、
+ *   新路径（材质/模型按新路径重取）统一走 refreshProjectAssets。
+ */
+async function followAssetRefsRemap(fromRel: string, result: AssetMoveResult): Promise<void> {
+  if (!result.changedScenes.length && !result.changedAssets.length) return;
+  for (const rel of [...result.changedScenes, ...result.changedAssets]) {
+    markAssetSelfWrite(rel);
+  }
+  // 打开中的场景由后端 replace 事件整树重建；抑制监听侧的「外部修改」分级响应
+  if (result.changedScenes.length) {
+    markSceneSelfWrite();
+    logStore.log(
+      "info",
+      `已随动改写 ${result.changedScenes.length} 个场景、${result.changedAssets.length} 个资产的引用（${fromRel} → ${result.newRel}）`,
+    );
+  }
+  await refreshProjectAssets([...result.changedAssets, fromRel, result.newRel]);
 }
 
 /** 目录内去重命名（与 store 状态快照保持一致：调用前传入最新资产列表） */
@@ -166,9 +191,13 @@ export const assetService = {
       return null;
     }
     try {
+      // 随动改写会重写磁盘上的场景文件：先打自写标记，避免文件监听在命令
+      // 返回前把这次改写当外部修改（脏场景会弹「丢弃改动」确认框）
+      markSceneSelfWrite();
       const r = await api.renameAsset(root, rel, newName);
-      await followSceneMove(root, rel, r);
-      return r;
+      await followAssetRefsRemap(rel, r);
+      await followSceneMove(root, rel, r.newRel);
+      return r.newRel;
     } catch (e) {
       logStore.log("error", `重命名失败: ${e}`);
       return null;
@@ -208,9 +237,12 @@ export const assetService = {
       return null;
     }
     try {
+      // 同 rename：随动改写场景文件前先进入自写抑制窗
+      markSceneSelfWrite();
       const r = await api.moveAsset(root, rel, destDir);
-      await followSceneMove(root, rel, r);
-      return r;
+      await followAssetRefsRemap(rel, r);
+      await followSceneMove(root, rel, r.newRel);
+      return r.newRel;
     } catch (e) {
       logStore.log("error", `移动失败: ${e}`);
       return null;

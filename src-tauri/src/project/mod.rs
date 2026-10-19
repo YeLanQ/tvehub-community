@@ -1,7 +1,9 @@
 pub mod assets;
 pub mod create_local;
 pub mod meta;
+pub mod model_refs;
 pub mod path;
+pub mod ref_remap;
 pub mod scan;
 
 pub use assets::*;

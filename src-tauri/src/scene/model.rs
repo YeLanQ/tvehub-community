@@ -155,4 +155,21 @@ impl NodeData {
         self.children.clear();
         self
     }
+
+    /// 资产移动/重命名后的引用随动：改写属性与自有字段里等于旧路径（或位于
+    /// 其目录前缀之下）的字符串值（material/model/modelMaterialOverrides/
+    /// cubeMap/audio 等引用全在 properties/extra）。结构性字段（type/id/name/
+    /// parentId/childIds）不参与匹配。命中任意改写返回 true。
+    pub fn remap_asset_refs(&mut self, from: &str, to: &str) -> bool {
+        let remap = |m: &mut JsonMap| {
+            m.values_mut()
+                .fold(false, |hit, v| hit | crate::project::ref_remap::remap_json_strings(v, from, to))
+        };
+        let mut hit = remap(&mut self.properties) | remap(&mut self.extra);
+        // 会话内图拍平后 children 恒空；防御性递归（文档形态复用同一结构）
+        for child in self.children.iter_mut() {
+            hit |= child.remap_asset_refs(from, to);
+        }
+        hit
+    }
 }

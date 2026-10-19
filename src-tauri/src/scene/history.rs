@@ -368,6 +368,79 @@ impl History {
     pub fn labels(&self) -> Vec<String> {
         self.undo_stack.iter().map(|c| c.label.clone()).collect()
     }
+
+    /// 资产移动/重命名后的历史载荷随动：改写两栈命令快照里的资产路径引用
+    /// （否则撤销/重做会把旧路径引用复活成白模）；AssetWrite 的 rel 与文本
+    /// 载荷同步改写。命中任意改写返回 true。
+    pub fn remap_refs(&mut self, from: &str, to: &str) -> bool {
+        self.undo_stack
+            .iter_mut()
+            .chain(self.redo_stack.iter_mut())
+            .fold(false, |hit, cmd| hit | remap_cmd_refs(cmd, from, to))
+    }
+}
+
+/// 单条历史命令的引用随动（History::remap_refs 用）
+fn remap_cmd_refs(cmd: &mut SceneCmd, from: &str, to: &str) -> bool {
+    use crate::project::ref_remap::{map_rel, remap_json_strings};
+    let mut hit = false;
+    match &mut cmd.kind {
+        CmdKind::Add { node } | CmdKind::AddTree { root: node, .. } => {
+            hit |= node.remap_asset_refs(from, to);
+        }
+        CmdKind::RemoveNodes { captured, .. } => {
+            for sub in captured.iter_mut() {
+                for n in sub.iter_mut() {
+                    hit |= n.remap_asset_refs(from, to);
+                }
+            }
+        }
+        CmdKind::PatchNode { before, after, .. } => {
+            hit |= before.remap_asset_refs(from, to);
+            hit |= after.remap_asset_refs(from, to);
+        }
+        CmdKind::PatchNodes { items } => {
+            for (_, before, after) in items.iter_mut() {
+                hit |= before.remap_asset_refs(from, to);
+                hit |= after.remap_asset_refs(from, to);
+            }
+        }
+        CmdKind::AssetWrite { rel, before, after } => {
+            if let Some(next) = map_rel(rel, from, to) {
+                *rel = next;
+                hit = true;
+            }
+            hit |= remap_asset_text(before, from, to);
+            hit |= remap_asset_text(after, from, to);
+        }
+        CmdKind::Settings { before, after } => {
+            if let Some(v) = before.as_mut() {
+                hit |= remap_json_strings(v, from, to);
+            }
+            hit |= remap_json_strings(after, from, to);
+        }
+        CmdKind::Rename { .. } | CmdKind::SetTransform { .. } | CmdKind::ReparentNodes { .. } => {}
+    }
+    hit
+}
+
+/// 资产文本载荷（.mat 全文快照）随动：按 JSON 树改写后以 pretty 序列化回填
+/// （Rust 侧本就统一 pretty 落盘）；解析失败（非 JSON 文本）保持原样。
+fn remap_asset_text(text: &mut String, from: &str, to: &str) -> bool {
+    use crate::project::ref_remap::remap_json_strings;
+    let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    if !remap_json_strings(&mut doc, from, to) {
+        return false;
+    }
+    match serde_json::to_string_pretty(&doc) {
+        Ok(next) => {
+            *text = next;
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 #[cfg(test)]

@@ -479,7 +479,12 @@ export class EditorEngine {
   ): Promise<void> {
     this.unbindSceneEvents();
     this.sceneUnlisten = await subscribe((e) => {
-      if (!this.disposed) this.graph.applyEvent(e);
+      if (this.disposed) return;
+      this.graph.applyEvent(e);
+      // 整树替换（外部强制重载、资产移动后的引用随动）：镜像已按快照重建，
+      // 渲染对象/各子系统绑定仍指向旧实例，必须整体重建——同步器的图变更
+      // 分派没有 replace 分支（replace 只回灌镜像），漏这一步视口停留在旧场景。
+      if (e.kind === "replace") this.rebuildAll();
     });
   }
 

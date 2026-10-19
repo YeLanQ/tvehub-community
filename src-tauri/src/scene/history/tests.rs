@@ -224,3 +224,57 @@ fn external_settings_undo_redo_restores_envelope() {
     assert_eq!(env["settings"], json!({ "a": 2 }));
 }
 
+
+/// 资产移动后的历史随动：图命令快照与 AssetWrite（rel + 文本载荷）一并改写，
+/// 撤销/重做不再复活旧路径引用
+#[test]
+fn remap_refs_updates_snapshots_and_asset_write() {
+    let mut h = History::default();
+    let node: NodeData = serde_json::from_value(json!({
+        "type": "meshNode", "id": "a", "name": "A", "source": "model",
+        "model": "assets/models/hero.glb",
+        "modelMaterialOverrides": { "Body": "assets/materials/body.mat" }
+    }))
+    .unwrap();
+    h.push(SceneCmd {
+        label: "编辑节点".into(),
+        kind: CmdKind::PatchNode { id: "a".into(), before: node.clone(), after: node },
+    });
+    h.push(SceneCmd {
+        label: "改材质".into(),
+        kind: CmdKind::AssetWrite {
+            rel: "assets/materials/body.mat".into(),
+            before: r#"{"$type":"material","map":"assets/textures/a.png"}"#.into(),
+            after: r#"{"$type":"material","map":"assets/textures/b.png"}"#.into(),
+        },
+    });
+
+    // 目录移动：assets/textures → assets/tex；单文件重命名：body.mat → body2.mat
+    assert!(h.remap_refs("assets/textures", "assets/tex"));
+    assert!(h.remap_refs("assets/materials/body.mat", "assets/materials/body2.mat"));
+
+    let cmd = h.undo_stack.get(1).unwrap();
+    match &cmd.kind {
+        CmdKind::AssetWrite { rel, before, after } => {
+            assert_eq!(rel, "assets/materials/body2.mat");
+            let before: serde_json::Value = serde_json::from_str(before).unwrap();
+            let after: serde_json::Value = serde_json::from_str(after).unwrap();
+            assert_eq!(before["map"], "assets/tex/a.png");
+            assert_eq!(after["map"], "assets/tex/b.png");
+        }
+        other => panic!("栈顶应是 AssetWrite: {other:?}"),
+    }
+    let cmd = h.undo_stack.get(0).unwrap();
+    match &cmd.kind {
+        CmdKind::PatchNode { after, .. } => {
+            assert_eq!(after.extra["model"], "assets/models/hero.glb", "目录外引用不动");
+            assert_eq!(
+                after.extra["modelMaterialOverrides"]["Body"],
+                "assets/materials/body2.mat"
+            );
+        }
+        other => panic!("应是 PatchNode: {other:?}"),
+    }
+    // 无命中返回 false
+    assert!(!h.remap_refs("assets/none", "assets/other"));
+}

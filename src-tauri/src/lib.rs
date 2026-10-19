@@ -343,17 +343,86 @@ async fn import_assets(
     Ok(imported)
 }
 
-/// 移动资产到项目内另一目录，返回新资产相对路径
+/// 资产移动/重命名结果：新相对路径 + 引用随动改写报告（前端据此抑制文件
+/// 监听回环并失效引擎缓存重读改写文档）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetMoveResult {
+    new_rel: String,
+    /// 内容被改写的场景文件（磁盘侧；打开中的会话另经 scene:changed replace 广播）
+    changed_scenes: Vec<String>,
+    /// 内容被改写的其他引用文档（.mat/.texcube/模型等）
+    changed_assets: Vec<String>,
+}
+
+/// 移动/重命名后的引用随动：磁盘全量改写 + 打开会话内存改写（广播 replace）。
+/// 改写失败不阻断主流程（文件已在新位置；引用保持旧值，白模由日志暴露）。
+/// 返回 (被改写场景 rel, 被改写其他文档 rel)，场景列表去重。
+async fn follow_asset_move_refs(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, scene::SceneSession>,
+    root: String,
+    from_rel: String,
+    new_rel: String,
+) -> (Vec<String>, Vec<String>) {
+    let root_path = PathBuf::from(&root);
+    let from = from_rel.clone();
+    let to = new_rel.clone();
+    let report = match tauri::async_runtime::spawn_blocking(move || {
+        project::ref_remap::remap_project_refs(&root_path, &from, &to)
+    })
+    .await
+    {
+        Ok(report) => report,
+        Err(e) => {
+            eprintln!("[asset] 引用随动改写失败 ({from_rel} → {new_rel}): {e}");
+            project::ref_remap::RefRemapReport::default()
+        }
+    };
+    // 打开会话内存随动（含撤销历史载荷），命中会话广播整树 replace 事件
+    let session_scenes = match state.hub() {
+        Ok(mut hub) => scene::remap_scene_sessions(&app, &mut hub, &root, &from_rel, &new_rel),
+        Err(e) => {
+            eprintln!("[asset] 会话引用随动失败 ({from_rel} → {new_rel}): {e}");
+            Vec::new()
+        }
+    };
+    let mut scenes = report.scenes;
+    for rel in session_scenes {
+        if !scenes.contains(&rel) {
+            scenes.push(rel);
+        }
+    }
+    // 文档改写在 others；模型内部 URI 改写在 models——前端都按“缓存失效重读”处理
+    let mut others = report.others;
+    for rel in report.models {
+        if !others.contains(&rel) {
+            others.push(rel);
+        }
+    }
+    (scenes, others)
+}
+
+/// 移动资产到项目内另一目录，返回新资产相对路径与引用随动改写报告
 #[tauri::command]
-async fn move_asset(root: String, rel: String, dest_dir: String) -> Result<String, String> {
+async fn move_asset(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, scene::SceneSession>,
+    root: String,
+    rel: String,
+    dest_dir: String,
+) -> Result<AssetMoveResult, String> {
     let root_for_follow = root.clone();
+    let rel_for_move = rel.clone();
     let new_rel = tauri::async_runtime::spawn_blocking(move || {
-        project::move_asset(&PathBuf::from(&root), &rel, &dest_dir)
+        project::move_asset(&PathBuf::from(&root), &rel_for_move, &dest_dir)
     })
     .await
     .map_err(|e| e.to_string())??;
     follow_shader_directive(&root_for_follow, &new_rel);
-    Ok(new_rel)
+    let (changed_scenes, changed_assets) =
+        follow_asset_move_refs(app, state, root_for_follow, rel, new_rel.clone()).await;
+    Ok(AssetMoveResult { new_rel, changed_scenes, changed_assets })
 }
 
 /// 删除资产（目录递归删除）
@@ -362,12 +431,26 @@ async fn delete_asset(root: String, rel: String) -> Result<(), String> {
     project::delete_asset(&PathBuf::from(&root), &rel)
 }
 
-/// 重命名资产，返回新资产相对路径
+/// 重命名资产，返回新资产相对路径与引用随动改写报告
 #[tauri::command]
-async fn rename_asset(root: String, rel: String, new_name: String) -> Result<String, String> {
-    let new_rel = project::rename_asset(&PathBuf::from(&root), &rel, &new_name)?;
-    follow_shader_directive(&root, &new_rel);
-    Ok(new_rel)
+async fn rename_asset(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, scene::SceneSession>,
+    root: String,
+    rel: String,
+    new_name: String,
+) -> Result<AssetMoveResult, String> {
+    let root_for_follow = root.clone();
+    let rel_for_rename = rel.clone();
+    let new_rel = tauri::async_runtime::spawn_blocking(move || {
+        project::rename_asset(&PathBuf::from(&root), &rel_for_rename, &new_name)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    follow_shader_directive(&root_for_follow, &new_rel);
+    let (changed_scenes, changed_assets) =
+        follow_asset_move_refs(app, state, root_for_follow, rel, new_rel.clone()).await;
+    Ok(AssetMoveResult { new_rel, changed_scenes, changed_assets })
 }
 
 /// 新建目录，返回创建目录相对路径

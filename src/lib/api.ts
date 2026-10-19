@@ -83,6 +83,16 @@ export interface RepoCategoryEntry {
   files: RepoFileEntry[];
 }
 
+/** 资产移动/重命名结果（Rust AssetMoveResult）：新路径 + 引用随动改写报告 */
+export interface AssetMoveResult {
+  /** 移动/重命名后的资产相对路径 */
+  newRel: string;
+  /** 内容被改写的场景文件（打开中的会话另经 scene:changed replace 事件重建镜像） */
+  changedScenes: string[];
+  /** 内容被改写的其他引用文档（.mat/.texcube/模型等） */
+  changedAssets: string[];
+}
+
 /** 单个平台能力：可用性 + 不可用原因（Rust 为单一事实源） */
 export interface PlatformCapability {
   available: boolean;
@@ -116,10 +126,10 @@ export const api = {
   importAssets: (root: string, destDir: string, sourcePaths: string[]) =>
     invoke<string[]>("import_assets", { root, destDir, sourcePaths }),
   moveAsset: (root: string, rel: string, destDir: string) =>
-    invoke<string>("move_asset", { root, rel, destDir }),
+    invoke<AssetMoveResult>("move_asset", { root, rel, destDir }),
   deleteAsset: (root: string, rel: string) => invoke<void>("delete_asset", { root, rel }),
   renameAsset: (root: string, rel: string, newName: string) =>
-    invoke<string>("rename_asset", { root, rel, newName }),
+    invoke<AssetMoveResult>("rename_asset", { root, rel, newName }),
   createFolder: (root: string, rel: string) => invoke<string>("create_folder", { root, rel }),
   /** 读取编辑器内置资源（internal/…，只读；内容编译期内嵌） */
   readInternalAsset: (rel: string) => invoke<string>("read_internal_asset", { rel }),

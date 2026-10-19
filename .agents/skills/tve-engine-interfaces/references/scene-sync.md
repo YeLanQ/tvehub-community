@@ -29,6 +29,11 @@ reparentNodes/rename/setTransform(id,before,after)/patchNode/patchNodes/undo/red
 `SceneChangedEvent { root, rel, kind, nodeId, revision, nodes: JsonRecord[], history, dirty }`，
 `kind ∈ add|remove|reparent|rename|transform|properties|replace|clear`。
 
+**replace 语义**：快照是整树权威状态（外部强制重载 `scene.open force`、资产移动后的
+引用随动、`state.restore`）。镜像由 `SceneClient.rebuildFromSnapshots` 重建；**渲染树
+必须整体重建**（`EditorEngine.bindSceneEvents` 收到 replace 后调 `rebuildAll()`）——
+同步器的 `onGraphChange` 没有 replace 分支，漏了这一步视口会停在旧场景对象上。
+
 ## 使用例
 
 `src/app/services/editorService.ts:195-197`（接线）：

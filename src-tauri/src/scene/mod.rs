@@ -272,6 +272,66 @@ fn emit_changes(app: &tauri::AppHandle, key: &SessionKey, core: &mut SessionCore
     }
 }
 
+/// 资产移动/重命名后的会话引用随动：遍历该项目根的全部打开会话，就地改写
+/// 图节点/信封/撤销历史里的资产路径引用（与磁盘侧 ref_remap 同规则）；命中的
+/// 会话 bump revision 并广播整树 replace 事件（各窗口按 (root, rel) 过滤重建
+/// 镜像，材质/模型按新路径重取）。返回被改写的场景 rel 列表。
+pub(crate) fn remap_scene_sessions(
+    app: &tauri::AppHandle,
+    hub: &mut SceneHub,
+    root: &str,
+    from_rel: &str,
+    to_rel: &str,
+) -> Vec<String> {
+    if from_rel.is_empty() || from_rel == to_rel {
+        return Vec::new();
+    }
+    let keys: Vec<SessionKey> = hub
+        .sessions
+        .keys()
+        .filter(|k| k.root.as_deref() == Some(root))
+        .cloned()
+        .collect();
+    let mut changed = Vec::new();
+    for key in keys {
+        let Some(core) = hub.sessions.get_mut(&key) else {
+            continue;
+        };
+        if !remap_core_refs(core, from_rel, to_rel) {
+            continue;
+        }
+        // 整树快照 replace 事件：前端镜像按新引用重建
+        let snapshots: Vec<NodeData> = core
+            .graph
+            .nodes
+            .values()
+            .map(|n| n.clone().flat())
+            .collect();
+        let change = GraphChange {
+            kind: "replace",
+            node_id: core.graph.root_id.clone().unwrap_or_default(),
+            snapshots,
+        };
+        emit_changes(app, &key, core, vec![change]);
+        changed.push(key.rel.clone());
+    }
+    changed
+}
+
+/// 单会话引用随动（图节点 + 信封 + 撤销历史载荷）；命中任意改写返回 true。
+/// 脏标记不变：干净会话磁盘同改后仍干净；脏会话的未保存修改与随动共存。
+fn remap_core_refs(core: &mut SessionCore, from: &str, to: &str) -> bool {
+    let mut hit = false;
+    for node in core.graph.nodes.values_mut() {
+        hit |= node.remap_asset_refs(from, to);
+    }
+    for v in core.envelope.values_mut() {
+        hit |= crate::project::ref_remap::remap_json_strings(v, from, to);
+    }
+    hit |= core.history.remap_refs(from, to);
+    hit
+}
+
 /// 从文档 JSON 装载会话核心（信封提取 + 图重建 + 历史清零）；返回整树 replace
 /// 变更（空图为 None），供磁盘重装时广播其他共享窗口。
 fn load_core_from_doc(
@@ -1368,4 +1428,59 @@ mod tests {
         );
         assert_eq!(scene_settings_get_for(&mut hub, "w").unwrap(), out);
     }
-}
+
+    /// 资产移动后的会话引用随动：图节点（含 modelMaterialOverrides）、信封、
+    /// 撤销历史载荷一并改写；无引用的会话返回 false（不广播 replace）
+    #[test]
+    fn remap_core_refs_updates_graph_envelope_and_history() {
+        let mut hub = SceneHub::default();
+        let key = SessionKey { root: Some("P".into()), rel: "assets/Main.scene".into() };
+        let doc = serde_json::json!({
+            "type": "scene",
+            "settings": { "environment": { "map": "assets/textures/env.png" } },
+            "root": {
+                "id": "a", "name": "Model", "type": "meshNode", "source": "model",
+                "model": "assets/models/hero.glb",
+                "material": "assets/materials/hero.mat",
+                "modelMaterialOverrides": { "Body": "assets/materials/body.mat" },
+                "children": [
+                    { "id": "b", "name": "Sfx", "type": "audioNode", "audio": "assets/audio/shot.mp3" }
+                ]
+            }
+        });
+        upsert_session(&mut hub, "w", key.clone(), &doc, Some(PathBuf::from("P")), false);
+        // 撤销栈里放一条含旧引用的补丁命令（模拟历史编辑）
+        let core = hub.sessions.get_mut(&key).unwrap();
+        let before: NodeData = serde_json::from_value(serde_json::json!({
+            "type": "meshNode", "id": "c", "name": "Old", "source": "model",
+            "model": "assets/models/hero.glb"
+        }))
+        .unwrap();
+        let after = before.clone();
+        core.history.push(SceneCmd {
+            label: "编辑节点".into(),
+            kind: CmdKind::PatchNode { id: "c".into(), before, after },
+        });
+
+        // 目录移动：assets/materials → assets/mats
+        let core = hub.sessions.get_mut(&key).unwrap();
+        assert!(remap_core_refs(core, "assets/materials", "assets/mats"), "有引用应命中");
+        let core = hub.sessions.get(&key).unwrap();
+        let doc = build_doc(core);
+        assert_eq!(doc["root"]["material"], "assets/mats/hero.mat");
+        assert_eq!(doc["root"]["modelMaterialOverrides"]["Body"], "assets/mats/body.mat");
+        // 目录外引用不动
+        assert_eq!(doc["root"]["model"], "assets/models/hero.glb");
+        assert_eq!(doc["root"]["children"][0]["audio"], "assets/audio/shot.mp3");
+        // 信封字段随动
+        assert_eq!(doc["settings"]["environment"]["map"], "assets/textures/env.png");
+        // 单文件贴图移动：信封引用改写
+        let core = hub.sessions.get_mut(&key).unwrap();
+        assert!(remap_core_refs(core, "assets/textures/env.png", "assets/sky/env.png"));
+        let core = hub.sessions.get(&key).unwrap();
+        assert_eq!(build_doc(core)["settings"]["environment"]["map"], "assets/sky/env.png");
+        // 再跑一次无命中改写：false（调用方据此不广播 replace）
+        let core = hub.sessions.get_mut(&key).unwrap();
+        assert!(!remap_core_refs(core, "assets/none", "assets/other"));
+    }
+}

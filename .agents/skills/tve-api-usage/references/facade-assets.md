@@ -13,14 +13,22 @@
 | `ensureProjectMeta(root)` | 补齐全项目 .meta |
 | `copyAsset(root, rel)` → 新 rel | 复制资产（自动去重命名） |
 | `importAssets(root, destDir, sourcePaths)` → 新 rel[] | 外部文件导入项目 |
-| `moveAsset(root, rel, destDir)` → 新 rel | 移动资产 |
+| `moveAsset(root, rel, destDir)` → `AssetMoveResult` | 移动资产（引用随动改写） |
 | `deleteAsset(root, rel)` | 删除资产 |
-| `renameAsset(root, rel, newName)` → 新 rel | 重命名资产 |
+| `renameAsset(root, rel, newName)` → `AssetMoveResult` | 重命名资产（引用随动改写） |
 | `createFolder(root, rel)` → rel | 新建目录 |
 | `writeAssetBinary(root, rel, contentB64)` | 写二进制（base64） |
 | `setCurrentProjectRoot(root \| null)` | **打开项目后必须先调**：asset:// 协议根就位 |
 
 类型：`AssetEntry { name, path, kind, size }`、`MetaEntry { uuid, url, sizeGrid }`。
+
+`AssetMoveResult { newRel, changedScenes, changedAssets }`：移动/重命名后端会**全量改写
+项目内引用旧路径的文档**（.scene/.prefab/.mat/.texcube/.terrain/.terrainmat，含目录
+前缀平移），并改写 **.gltf/.glb 内部外部 URI**（buffers/images 指向的同目录 `.bin`/贴图；
+模型自身移动时 URI 相对基准变，改写为指回原资源的相对地址，含 `../` 与空格编码），
+打开中的场景会话（含撤销历史）同步改写并广播 `scene:changed` replace 事件；
+`changedScenes/changedAssets` 是被改写文件清单（前端据此打自写标记并失效引擎缓存
+重读，见 `assetService.followAssetRefsRemap`）。
 
 ## 使用例
 
