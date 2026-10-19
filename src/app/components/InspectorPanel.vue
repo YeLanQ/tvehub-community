@@ -197,23 +197,29 @@ onBeforeUnmount(flushMaterialPersist);
 
 <template>
   <div class="panel inspector">
-    <!-- 资产模式：资产面板选中资产 → 预览 + 暴露属性（最后点击优先于节点检查器） -->
-    <div v-if="assetMode && assetRel" class="inspector-body mono">
-      <ComponentCard title="Asset" :open="true" :type="assetRel.split('.').pop()">
-        <AssetInspector :rel="assetRel" />
+    <!-- 资产模式：资产面板选中资产 → 预览 + 暴露属性（最后点击优先于节点检查器）。
+         常驻挂载（v-show 只隐藏不卸载）：AssetInspector 内的 3D 预览持有 WebGL 上下文，
+         节点/资产模式来回切换时若随 v-if 卸载会反复销毁并重建上下文（PMREM + 着色器
+         重编译，主线程卡一帧、面板像刷新）；隐藏态由预览的 IntersectionObserver
+         自动暂停渲染循环，不产生持续开销。 -->
+    <div v-show="assetMode && assetRel" class="inspector-body mono">
+      <ComponentCard title="Asset" :open="true" :type="assetRel ? assetRel.split('.').pop() : ''">
+        <AssetInspector v-if="assetRel" :rel="assetRel" />
       </ComponentCard>
     </div>
 
-    <!-- 多选：批量编辑卡（变换/标签/启停/批量加组件，一次撤销） -->
-    <div v-else-if="multiIds.length > 1" class="inspector-body mono">
-      <ComponentCard title="Multiple Selection" :open="true" :type="multiIds.length + ' 节点'">
-        <MultiSection :ids="multiIds" :rev="revision" @addComponentMenu="onMultiAddComponentMenu" />
-      </ComponentCard>
-    </div>
+    <!-- 节点模式（含多选/空态）：资产模式下隐藏，结构与数据保持原样 -->
+    <template v-if="!assetMode || !assetRel">
+      <!-- 多选：批量编辑卡（变换/标签/启停/批量加组件，一次撤销） -->
+      <div v-if="multiIds.length > 1" class="inspector-body mono">
+        <ComponentCard title="Multiple Selection" :open="true" :type="multiIds.length + ' 节点'">
+          <MultiSection :ids="multiIds" :rev="revision" @addComponentMenu="onMultiAddComponentMenu" />
+        </ComponentCard>
+      </div>
 
-    <div v-else-if="!node" class="empty muted">未选择节点</div>
+      <div v-else-if="!node" class="empty muted">未选择节点</div>
 
-    <div v-else class="inspector-body mono">
+      <div v-else class="inspector-body mono">
       <ComponentCard title="Node" :open="true" :type="node.typeKey">
         <NodeSection
           :node="node"
@@ -441,6 +447,7 @@ onBeforeUnmount(flushMaterialPersist);
           <ModelMaterialSection :node="node" :rev="revision" @update="onModelMaterialUpdate" />
         </ComponentCard>
       </template>
-    </div>
+      </div>
+    </template>
   </div>
 </template>

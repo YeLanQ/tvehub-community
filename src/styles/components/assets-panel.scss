@@ -120,6 +120,7 @@
 
 /* ---------- 主体 ---------- */
 .am-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -314,4 +315,56 @@
   color: #fff;
   font-size: 13px;
   pointer-events: none;
+}
+
+// 模型解析进度条（细条，内容区顶部覆盖层）：批量预载/点击大 GLB 时出现，
+// 解析完收起。绝对定位不占布局——插入/撤走若挤压列表，会表现为面板刷新闪烁；
+// 覆盖层放行指针事件，不挡下方条目的点击。
+.am-parse-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  pointer-events: none;
+}
+
+.am-parse-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.am-parse-track {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.am-parse-thumb {
+  position: absolute;
+  width: 36%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--hero-glow);
+  animation: am-parse-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes am-parse-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(290%);
+  }
 }

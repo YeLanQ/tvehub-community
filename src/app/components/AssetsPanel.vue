@@ -10,6 +10,9 @@
 import { computed, provide, onMounted, onUnmounted, ref, watch } from "vue";
 import { getAssetsStore } from "../stores/assets";
 import { getProjectStore } from "../stores/project";
+import { getModelParseStore } from "../stores/model-parse";
+import { getEditorStore } from "../stores/editor";
+import { useDelayedFlag } from "../composables/use-delayed-flag";
 import { openContextMenu } from "../../lib/editor/context-menu";
 import { setAssetSelection } from "../lib/active-panel";
 import { uiStateGet, uiStateSet } from "../../lib/ui-state";
@@ -47,6 +50,13 @@ import "../../styles/components/assets-panel.scss";
 
 const assetsStore = getAssetsStore();
 const projectStore = getProjectStore();
+
+// 模型解析中状态：面板内细进度条（批量预载/点击大 GLB 时的可视反馈）
+// 防闪烁：短解析（几十毫秒）不显示，显示后至少保持一拍；且不占布局（覆盖层），
+// 否则插入/撤走会让整个资产列表跳一下，看起来像面板刷新
+const modelParse = getModelParseStore();
+const parsingCount = computed(() => modelParse.count());
+const { visible: parseVisible } = useDelayedFlag(computed(() => parsingCount.value > 0));
 
 // ---------------------------------------------------------------------------
 // 树（左栏）：从平铺资产构建目录树
@@ -375,6 +385,9 @@ onMounted(() => {
   void refreshWorkshopMenu();
   if (projectStore.currentPath) void assetsStore.load(projectStore.currentPath);
   loadCollapsedDirs();
+  // 桥接模型解析状态（幂等；引擎就绪后 onLoadingChange 驱动面板内细进度条）
+  const editor = getEditorStore();
+  if (editor.engine) modelParse.attach(editor.engine.models);
 });
 
 onUnmounted(flushCollapsedDirs);
@@ -422,8 +435,13 @@ provide<AssetTreeCollapsed>(ASSET_TREE_COLLAPSED_KEY, treeCollapsed);
       @refresh="assetsStore.refresh"
     />
 
-    <!-- 主体：左栏文件夹树 + 右栏资产内容 -->
+    <!-- 模型解析进度条（覆盖在内容区顶部，不占布局）：批量预载/点击大 GLB 时出现，
+         解析完成收起；短解析被延迟窗挡掉，避免列表跳一下像刷新 -->
     <div class="am-body">
+      <div v-if="parseVisible" class="am-parse-bar" :title="`正在解析 ${parsingCount} 个模型`">
+        <span class="am-parse-label">解析模型 ×{{ parsingCount }}</span>
+        <span class="am-parse-track"><span class="am-parse-thumb"></span></span>
+      </div>
       <div class="am-tree" @contextmenu.prevent="onBlankContext">
         <AssetTreeNode
           v-for="node in root"

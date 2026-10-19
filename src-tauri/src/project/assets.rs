@@ -56,12 +56,18 @@ pub fn copy_asset(root: &Path, rel: &str) -> Result<String, String> {
 
 /// 递归复制目录/文件；复制 `.meta` 时重新生成其中的 uuid。
 pub fn copy_tree(src: &Path, dest: &Path) -> Result<(), String> {
+    copy_tree_progress(src, dest, &mut |_| {})
+}
+
+/// 递归复制目录/文件；复制 `.meta` 时重新生成其中的 uuid。
+/// on_file：每复制完一个文件回调一次（文件名；导入进度条用）。
+pub fn copy_tree_progress(src: &Path, dest: &Path, on_file: &mut dyn FnMut(&str)) -> Result<(), String> {
     if src.is_dir() {
         fs::create_dir_all(dest).map_err(|e| format!("创建目录失败: {}", e))?;
         let rd = fs::read_dir(src).map_err(|e| e.to_string())?;
         for entry in rd.flatten() {
             let p = entry.path();
-            copy_tree(&p, &dest.join(entry.file_name()))?;
+            copy_tree_progress(&p, &dest.join(entry.file_name()), on_file)?;
         }
     } else {
         fs::copy(src, dest).map_err(|e| format!("复制失败 '{}': {}", src.display(), e))?;
@@ -72,12 +78,35 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<(), String> {
         {
             refresh_meta_uuid(dest)?;
         }
+        let fname = src
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        on_file(&fname);
     }
     Ok(())
 }
 
+/// 递归统计文件数（目录展开；导入进度总数预计算用）
+pub fn count_files_deep(path: &Path) -> usize {
+    if path.is_file() {
+        return 1;
+    }
+    let rd = match fs::read_dir(path) {
+        Ok(rd) => rd,
+        Err(_) => return 0,
+    };
+    rd.flatten().map(|e| count_files_deep(&e.path())).sum()
+}
+
 /// 导入外部文件/目录到项目内指定目录（dest_dir 相对项目根）。同名自动加数字后缀。
-pub fn import_assets(root: &Path, dest_dir: &str, source_paths: &[String]) -> Result<Vec<String>, String> {
+/// on_progress：(已完成文件数, 总文件数, 当前文件名)，总数复制前预计算。
+pub fn import_assets(
+    root: &Path,
+    dest_dir: &str,
+    source_paths: &[String],
+    on_progress: &mut dyn FnMut(usize, usize, &str),
+) -> Result<Vec<String>, String> {
     if dest_dir.trim() == "src" || dest_dir.trim().starts_with("src/") {
         return Err("不能在 src 目录导入资产（脚本目录）".to_string());
     }
@@ -86,6 +115,8 @@ pub fn import_assets(root: &Path, dest_dir: &str, source_paths: &[String]) -> Re
         .map_err(|e| format!("无法解析项目目录: {}", e))?;
     let dest = resolve_in_root(&root_abs, dest_dir)?;
     fs::create_dir_all(&dest).map_err(|e| format!("创建目标目录失败: {}", e))?;
+    let total: usize = source_paths.iter().map(|p| count_files_deep(Path::new(p))).sum();
+    let mut done = 0usize;
     let mut imported = Vec::new();
     for src_path in source_paths {
         let src = PathBuf::from(src_path);
@@ -98,10 +129,15 @@ pub fn import_assets(root: &Path, dest_dir: &str, source_paths: &[String]) -> Re
         };
         let dest_file = unique_dest_path(&dest, &fname);
         if src.is_dir() {
-            copy_tree(&src, &dest_file)?;
+            copy_tree_progress(&src, &dest_file, &mut |name| {
+                done += 1;
+                on_progress(done, total, name);
+            })?;
         } else {
             fs::copy(&src, &dest_file)
                 .map_err(|e| format!("导入失败 '{}': {}", fname, e))?;
+            done += 1;
+            on_progress(done, total, &fname);
         }
         copy_meta_sibling(&src, &dest_file)?;
         ensure_meta(&dest_file)?;

@@ -6,6 +6,7 @@ import { assetService } from "../services/assetService";
 import type { ScriptPrototype } from "../lib/script-prototypes";
 import { logStore } from "./log";
 import { getProjectStore } from "./project";
+import { getAssetImportStore } from "./asset-import";
 
 /**
  * 资产状态层：持有资产列表/meta/选中项，并把写操作委托给 assetService。
@@ -247,9 +248,17 @@ export function getAssetsStore(): AssetsStore {
       return r;
     },
     async importPaths(root, destDir, sourcePaths) {
-      const ok = await assetService.importPaths(root, destDir, sourcePaths);
-      if (ok) await reload(root);
-      return ok;
+      // 导入期整窗禁操：Rust 逐文件复制 + 前端遮罩（asset-import 事件推进度）。
+      // 目录结构复制中变动（增删/移动/再导入）会与复制目标撞写，遮罩挡指针。
+      const importMask = getAssetImportStore();
+      importMask.begin();
+      try {
+        const ok = await assetService.importPaths(root, destDir, sourcePaths);
+        if (ok) await reload(root);
+        return ok;
+      } finally {
+        importMask.finish();
+      }
     },
     async createSceneAsset(root, destDir, stem) {
       const r = await assetService.createSceneAsset(root, destDir, stem, state.assets);

@@ -309,12 +309,31 @@ async fn copy_asset(root: String, rel: String) -> Result<String, String> {
     Ok(new_rel)
 }
 
-/// 导入外部文件/目录到项目内指定目录，返回成功导入的相对路径列表
+/// 导入进度事件载荷（asset-import-progress；前端遮罩进度条数据源）
+#[derive(Clone, serde::Serialize)]
+struct ImportProgressPayload {
+    done: usize,
+    total: usize,
+    name: String,
+}
+
+/// 导入外部文件/目录到项目内指定目录，返回成功导入的相对路径列表。
+/// 逐文件经 asset-import-progress 事件汇报进度（前端导入遮罩）。
 #[tauri::command]
-async fn import_assets(root: String, dest_dir: String, source_paths: Vec<String>) -> Result<Vec<String>, String> {
+async fn import_assets(
+    app: tauri::AppHandle,
+    root: String,
+    dest_dir: String,
+    source_paths: Vec<String>,
+) -> Result<Vec<String>, String> {
     let root_for_follow = root.clone();
     let imported = tauri::async_runtime::spawn_blocking(move || {
-        project::import_assets(&PathBuf::from(&root), &dest_dir, &source_paths)
+        project::import_assets(&PathBuf::from(&root), &dest_dir, &source_paths, &mut |done, total, name| {
+            let _ = app.emit(
+                "asset-import-progress",
+                ImportProgressPayload { done, total, name: name.to_string() },
+            );
+        })
     })
     .await
     .map_err(|e| e.to_string())??;

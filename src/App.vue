@@ -26,10 +26,12 @@ import { logicEditorState } from "./app/composables/logic-editor";
 import ProjectSettingsPanel from "./app/components/ProjectSettingsPanel.vue";
 import BuildPanel from "./app/components/BuildPanel.vue";
 import BootMask from "./app/components/BootMask.vue";
+import AssetImportMask from "./app/components/AssetImportMask.vue";
 import { docks, type DockZoneId } from "./app/docks";
 import { getEditorStore } from "./app/stores/editor";
 import { getProjectStore } from "./app/stores/project";
 import { getBootLoadingStore } from "./app/stores/boot-loading";
+import { getAssetImportStore } from "./app/stores/asset-import";
 import { isTauri } from "./lib/tauri-env";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -74,9 +76,10 @@ let unlistenNative: UnlistenFn | null = null;
 /** 窗口级快捷键：F2 重命名选中节点 / W-E-R 切换变换工具 / Ctrl+Z 撤销 / Ctrl+S 保存 / Ctrl+W 关闭项目（原生菜单已移除） */
 function onWindowKeyDown(e: KeyboardEvent): void {
   // 项目装载蒙版期间（standby/loading）编辑器尚未就绪：忽略全部快捷键，
-  // 避免装载中途触发保存/撤销/关闭等操作
+  // 避免装载中途触发保存/撤销/关闭等操作。资产导入期间同理（复制中目录在变动）
   const bootPhase = getBootLoadingStore().state.phase;
   if (bootPhase === "loading" || bootPhase === "standby") return;
+  if (getAssetImportStore().state.active) return;
   const key = e.key.toLowerCase();
   // F2：按最近交互的面板上下文重命名——资产面板内重命名选中资产；
   // 层级/视口/检查器等场景区重命名选中节点。文本焦点下不拦截（保留输入/Monaco 行为）
@@ -245,5 +248,8 @@ onUnmounted(() => {
 
       <!-- 项目装载蒙版（顶层：Manager 打开项目 → 资产/场景装载进度，就绪后揭幕） -->
       <BootMask />
+
+      <!-- 资产导入遮罩（导入复制期间展示逐文件进度并拦截全部指针操作） -->
+      <AssetImportMask />
   </div>
 </template>

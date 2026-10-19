@@ -195,6 +195,10 @@ function setHomeView(pos: THREE.Vector3, target: THREE.Vector3, fov: number): vo
 
 function syncSize(): void {
   if (!renderer || !camera) return;
+  // 隐藏态（面板 v-show 收起，display:none）容器尺寸为 0：跳过，保持最后一次
+  // 有效画布尺寸，避免缩成 1×1 后恢复显示时优先渲染出错误宽高比的一帧
+  const el = host.value;
+  if (el && (el.clientWidth < 2 || el.clientHeight < 2)) return;
   const { w, h } = viewportSize();
   renderer.setSize(w, h, false);
   camera.aspect = w / h;

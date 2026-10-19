@@ -28,6 +28,9 @@ export interface ModelFileAccess {
 /** 模型资产变更回调（加载完成后引擎据此刷新引用节点） */
 export type ModelChangeListener = (rel: string) => void;
 
+/** 模型解析状态翻转回调（开始/结束解析；UI 据此显示/收起"解析中"提示） */
+export type ModelLoadingListener = (rel: string, loading: boolean) => void;
+
 type ModelStatus = "loading" | "ready" | "error";
 
 /** 缓存条目：解析结果或失败原因 */
@@ -48,6 +51,7 @@ export class ModelManager {
   private loading = new Set<string>();
   private access: ModelFileAccess | null = null;
   private listeners = new Set<ModelChangeListener>();
+  private loadingListeners = new Set<ModelLoadingListener>();
 
   setAccess(access: ModelFileAccess | null): void {
     this.access = access;
@@ -58,8 +62,23 @@ export class ModelManager {
     return () => this.listeners.delete(l);
   }
 
+  /** 订阅解析状态翻转（某 rel 开始/结束解析；UI 据此显示/收起"解析中"提示） */
+  onLoadingChange(l: ModelLoadingListener): () => void {
+    this.loadingListeners.add(l);
+    return () => this.loadingListeners.delete(l);
+  }
+
   private notify(rel: string): void {
     for (const l of this.listeners) l(rel);
+  }
+
+  private notifyLoading(rel: string, loading: boolean): void {
+    for (const l of this.loadingListeners) l(rel, loading);
+  }
+
+  /** 是否正在解析（在解析中的 rel 尚未入缓存，has/metaFor 均不可用） */
+  isLoading(rel: string): boolean {
+    return this.loading.has(rel);
   }
 
   /** 是否已解析完成（ready 才可实例化） */
@@ -118,6 +137,7 @@ export class ModelManager {
         continue;
       }
       this.loading.add(rel);
+      this.notifyLoading(rel, true);
       try {
         const ok = await this.loadOne(rel);
         if (ok) loaded++;
@@ -136,6 +156,7 @@ export class ModelManager {
         this.notify(rel);
       } finally {
         this.loading.delete(rel);
+        this.notifyLoading(rel, false);
         processed += 1;
         report();
       }
