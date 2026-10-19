@@ -13,7 +13,8 @@ tve（three-visual-editor）内置 3D 场景编辑器与脚本 SDK 的用户文�
 - **画示意/分镜**：[白板](editor/whiteboard.md)；
 - **让 AI 代劳**：[AI 助手](editor/assistant.md)；
 - **做行为逻辑**：[场景图](editor/graph.md)（可视化节点编辑运行时行为）；
-- **发布**：[预览与构建](editor/preview-build.md)。
+- **发布**：[预览与构建](editor/preview-build.md)；
+- **让外部工具/AI 驱动编辑器**：[指令集总览](commands/overview.md)（本地 TCP 控制面、事件、错误码与客户端示例）。
 
 ## 约定
 
@@ -61,6 +62,19 @@ tve（three-visual-editor）内置 3D 场景编辑器与脚本 SDK 的用户文�
 | [补间动画 tween](sdk/tween.md) | `tween` 工厂、链式配置、序列/并行组、31 个缓动、全局控制 |
 | [通用设施](sdk/utils.md) | `Delegate` 委托、`Pool` 对象池、`DataCenter` 数据中心 |
 | [API 参考](sdk/api.md) | 全量 API 自动生成（类型 + JSDoc + 声明级 doctest 示例，随 `tve.d.ts` 同步） |
+
+## 指令集文档（开发者服务）
+
+应用在 `127.0.0.1` 上提供本地控制面（TCP JSON Lines + MCP），用于脚本、CI、外部 Agent 与内置助手驱动编辑器。当前方法集 **50 条**（local 18 / editor 32），运行时以 `devtools.catalog` 为准。
+
+| 文档 | 内容 |
+| --- | --- |
+| [指令集总览](commands/overview.md) | 连接/发现文件、三种帧、最小 Node 客户端、路由与写链契约、安全边界、能力自描述 |
+| [项目与场景](commands/project-scene.md) | 项目创建/打开/关闭/构建，场景列表/打开/保存/直写，冷启动就绪 |
+| [节点、组件与状态](commands/node-state.md) | 节点增删改、组件挂载、快照恢复、撤销重做、场景设置补丁 |
+| [资产、材质与预览](commands/asset-preview.md) | 资产读写/新建/删除/刷新、材质唯一写口、着色器、预览与截图 |
+| [控制面、事件与错误](commands/devtools-events.md) | 握手/自省、工具权限、事件表、错误码、文件索引、MCP 映射 |
+| [方法速查（50 条）](commands/reference.md) | 全量方法表：路由、权限、参数、返回与备注 |
 
 ## 许可
 

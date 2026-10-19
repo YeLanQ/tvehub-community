@@ -69,6 +69,11 @@ const DOC_PAGES = [
     desc: "tve 脚本 API：组件生命周期、装饰器、engine 接口",
     hash: "sdk/overview",
   },
+  {
+    name: "指令集文档",
+    desc: "本地 TCP 控制面：50 条方法、事件、错误码与客户端示例",
+    hash: "commands/overview",
+  },
 ];
 
 /** 打开内嵌文档（弹层在 HomeView；此处只发请求事件） */
