@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  backendFallback,
   createRHIDevice,
   registerRHIDevice,
   registeredRHIDeviceKinds,
   resetRHIDeviceRegistry,
 } from "./registry";
+import { RHIDeviceCreationError } from "./types";
 import type { RHIDevice, RHIDeviceFactory } from "./types";
 
 /** 桩设备（不触碰真实 GPU；记录创建参数供断言） */
 function fakeDevice(kind: "webgl" | "webgpu", options: unknown): RHIDevice {
   return {
     kind,
+    rtTextureFlipY: false,
     domElement: document.createElement("canvas"),
     native: { kind, options },
     configureDisplay: () => {},
@@ -73,6 +76,22 @@ describe("RHI 后端注册表", () => {
     });
     const device = await createRHIDevice("webgpu", {});
     expect(device.kind).toBe("webgl");
+  });
+
+  it("不可重试失败（无适配器/软件适配器/init 超时）跳过退避重试直接回退", async () => {
+    let attempts = 0;
+    registerRHIDevice("webgl", okFactory("webgl"));
+    registerRHIDevice("webgpu", async () => {
+      attempts++;
+      throw new RHIDeviceCreationError("仅有软件适配器（swiftshader）", false);
+    });
+    const started = Date.now();
+    const device = await createRHIDevice("webgpu", {});
+    expect(device.kind).toBe("webgl");
+    // 三次退避（0/300/700ms）一次都不该发生：确定性不可用时重试只会拖慢启动
+    expect(attempts).toBe(1);
+    expect(Date.now() - started).toBeLessThan(250);
+    expect(backendFallback()?.errors[0]).toContain("软件适配器");
   });
 
   it("auto：WebGPU 后端未注册时直接落 WebGL", async () => {

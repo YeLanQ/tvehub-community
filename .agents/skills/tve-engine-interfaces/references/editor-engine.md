@@ -34,6 +34,24 @@
 | `terrainPaint: TerrainPaintController` | 地形绘制笔刷（begin/endTerrainPaint） |
 | `materials/shaders/models/animation/audio/particles/physics/nav/logic` | 各 System（缓存/解析/实例化） |
 
+**WebGPU 后端门控**（RHI `backends/three/webgpu.ts`）：创建设备前先探测适配器——
+无 `navigator.gpu` / `requestAdapter()` 返回 null / 软件适配器（SwiftShader、llvmpipe、
+WARP、Microsoft Basic Render，或 `isFallbackAdapter=true`）/ init 超过 6s，一律抛
+`RHIDeviceCreationError(retryable=false)`；registry 对不可重试错误**不再退避重试**，
+立即回退经典 WebGLRenderer。另有两个关键守卫：
+
+- `powerPreference` 必须归一化为 `"low-power" | "high-performance"` 或省略（把编辑器
+  的 `"default"` 直接传给 WebGPU 会因非法枚举抛 TypeError，three 捕获后**静默回退其
+  WebGL2 兼容层**——启动慢数倍、WebGPU 独有能力丢失，这是「设为 webgpu 却极慢」的
+  历史根因）；
+- init 后校验 `backend.isWebGLBackend`：three 若已内部回退到兼容层，判不可重试失败，
+  改走经典 WebGL（宁可明确降级也不跑慢兼容层）。
+
+启动计时：设备就绪后包装 GPUDevice 的 `createShaderModule` / `createRenderPipeline[Async]`
+/ `createComputePipeline[Async]`，把适配器协商、init、模块数/字节/耗时、管线数/耗时写入
+`globalThis.__tveGpuTiming`（player 汇总首帧提交/可见后输出，见 player-runtime）。
+`RHIDeviceOptions.traceStartup=false`（release 构建）时跳过全部包装与全局，零采集。
+
 **节点创建方法族**：`addEmptyGroup / addMesh(geometryKind,parent) / addDataMesh(parent)
 （source=data 数据化网格，载荷经检查器导入）/ addLight(kind,parent) /
 addCamera / addSkybox / addAudio / addParticleSystem / addTerrain / addNavArea /

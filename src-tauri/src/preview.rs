@@ -82,7 +82,19 @@ pub async fn export_web_preview_from_scene(
     // 前端运行时清单里的 .wasm（base64）分流进 binaries 按字节写盘
     let mut binaries: HashMap<String, Vec<u8>> = HashMap::new();
     crate::scene_pack::split_wasm_base64_files(&mut files, &mut binaries)?;
-    crate::scene_pack::collect_scene_assets(&root_path, &scene_text, &mut files, &mut binaries);
+    let mut manifest = Vec::new();
+    crate::scene_pack::collect_scene_assets(
+        &root_path,
+        &scene_text,
+        &mut files,
+        &mut binaries,
+        &mut manifest,
+    );
+    // 启动预取清单（player 与场景文件同目录读取；含加载类型/阶段）
+    files.insert(
+        "scene.manifest.json".to_string(),
+        crate::scene_pack::asset_manifest_json(&manifest),
+    );
 
     write_export(&root, files, &binaries)
 }

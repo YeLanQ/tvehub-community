@@ -156,6 +156,23 @@ fn export_content_consistent_across_channels() {
         let wx_out = root.join("build/wechat");
         let mut web_keys = BTreeSet::new();
         collect_content_keys(&web_out, &web_out, &mut web_keys);
+        // 启动预取清单是 web 渠道的打包元数据（微信运行时不消费），不参与内容一致性比对
+        web_keys.retain(|k| !k.ends_with(".manifest.json"));
+        // 但多文件 web 产物必须带上它，且条目路径都落在产物内（release 改名/模型转 bin
+        // 之后仍与场景引用一致）
+        let manifest_text = fs::read_to_string(web_out.join("scenes/Main.manifest.json"))
+            .unwrap_or_else(|e| panic!("web 产物缺少启动预取清单: {e}"));
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
+        let manifest_assets = manifest["assets"].as_array().expect("清单 assets 必须是数组");
+        assert!(!manifest_assets.is_empty(), "启动预取清单不应为空");
+        for entry in manifest_assets {
+            let path = entry["path"].as_str().expect("清单条目缺 path");
+            assert!(
+                web_keys.contains(path),
+                "清单条目必须是产物内文件: {path}（release={release}）"
+            );
+            assert!(entry["type"].as_str().is_some(), "清单条目缺加载类型");
+        }
         let data = parse_data_js(&fs::read_to_string(wx_out.join("data.js")).unwrap());
         // 资产键集 = data.assets 内联键（场景/小文本）∪ data.assetFiles 文件化键
         // （二进制资产文件化后不再 base64 内联）

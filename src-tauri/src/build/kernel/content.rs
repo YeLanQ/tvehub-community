@@ -21,6 +21,8 @@ struct SceneInput {
     text_assets: HashMap<String, String>,
     /// 场景引用的二进制资产（贴图/模型/音频）
     binaries: HashMap<String, Vec<u8>>,
+    /// 启动预取清单条目（release 前路径；生成清单时经重命名表映射）
+    manifest: Vec<crate::scene_pack::AssetRef>,
     /// 缺失资产清单
     missing: Vec<String>,
 }
@@ -36,12 +38,20 @@ fn collect_scene_inputs(root: &Path, scenes: &[String]) -> Result<Vec<SceneInput
                 .map_err(|e| format!("读取场景失败 '{rel}': {e}"))?;
             let mut text_assets: HashMap<String, String> = HashMap::new();
             let mut binaries: HashMap<String, Vec<u8>> = HashMap::new();
-            let missing = crate::scene_pack::collect_scene_assets(root, &text, &mut text_assets, &mut binaries);
+            let mut manifest = Vec::new();
+            let missing = crate::scene_pack::collect_scene_assets(
+                root,
+                &text,
+                &mut text_assets,
+                &mut binaries,
+                &mut manifest,
+            );
             Ok::<_, String>(SceneInput {
                 rel: rel.clone(),
                 text,
                 text_assets,
                 binaries,
+                manifest,
                 missing,
             })
         })
@@ -58,6 +68,9 @@ pub(in crate::build) struct ContentManifest {
     pub text_assets: HashMap<String, String>,
     /// 场景引用的二进制资产（同上）
     pub binaries: HashMap<String, Vec<u8>>,
+    /// 场景启动预取清单（产物内场景文件同名的 .manifest.json → JSON 文本；
+    /// release 后路径已随重命名改写）
+    pub manifests: Vec<(String, String)>,
     /// 缺失资产清单（跨场景累计）
     pub missing: Vec<String>,
     /// release 生效产物：被二进制化的模型（项目相对路径）
@@ -79,6 +92,7 @@ pub(in crate::build) fn build_content(
     let mut packed: Vec<PackedScene> = Vec::new();
     let mut used_names: Vec<String> = Vec::new();
     let mut scene_texts: Vec<(String, String)> = Vec::new();
+    let mut scene_manifests: Vec<(String, Vec<crate::scene_pack::AssetRef>)> = Vec::new();
     let mut text_assets: HashMap<String, String> = HashMap::new();
     let mut binaries: HashMap<String, Vec<u8>> = HashMap::new();
     let mut missing: Vec<String> = Vec::new();
@@ -95,6 +109,7 @@ pub(in crate::build) fn build_content(
     for input in inputs {
         let name = scene_entry_name(&input.rel, &mut used_names);
         scene_texts.push((format!("scenes/{name}.json"), input.text));
+        scene_manifests.push((format!("scenes/{name}.manifest.json"), input.manifest));
         packed.push(PackedScene {
             name,
             rel: input.rel,
@@ -106,15 +121,37 @@ pub(in crate::build) fn build_content(
     }
 
     let mut bin_converted: Vec<String> = Vec::new();
-    if release {
+    let renames = if release {
         apply_release(
             root,
             &mut text_assets,
             &mut binaries,
             &mut scene_texts,
             &mut bin_converted,
-        );
-    }
+        )
+    } else {
+        HashMap::new()
+    };
+
+    // 启动预取清单：release 后资产键已改名（模型还转为 .bin），按重命名表映射；
+    // 被内联/剔除的模型兄弟不产出条目（运行时由加载器自取或不需要）
+    let manifests: Vec<(String, String)> = scene_manifests
+        .into_iter()
+        .map(|(rel, refs)| {
+            let mapped: Vec<crate::scene_pack::AssetRef> = refs
+                .into_iter()
+                .filter_map(|a| {
+                    let path = if release { renames.get(&a.path)?.clone() } else { a.path };
+                    Some(crate::scene_pack::AssetRef {
+                        path,
+                        load: a.load,
+                        phase: a.phase,
+                    })
+                })
+                .collect();
+            (rel, crate::scene_pack::asset_manifest_json(&mapped))
+        })
+        .collect();
 
     let assets_packed = packed.len() + text_assets.len() + binaries.len();
     Ok(ContentManifest {
@@ -122,6 +159,7 @@ pub(in crate::build) fn build_content(
         scene_texts,
         text_assets,
         binaries,
+        manifests,
         missing,
         bin_converted,
         assets_packed,

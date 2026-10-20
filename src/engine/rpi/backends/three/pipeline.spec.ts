@@ -30,6 +30,8 @@ function recordingDevice() {
     log,
     targets,
     kind: "webgl" as const,
+    /** WebGL 设备默认不翻转（测试里可改 true 模拟 WebGPU 坐标系统） */
+    rtTextureFlipY: false,
     domElement: document.createElement("canvas"),
     native: {},
     configureDisplay(): void {},
@@ -193,6 +195,23 @@ describe("RPI three 管线", () => {
     expect(s).toBeInstanceOf(THREE.Scene);
     expect(c).toBeInstanceOf(THREE.OrthographicCamera);
     expect(s.children[0]).toBeInstanceOf(THREE.Mesh);
+  });
+
+  it("three/webgpu 设备（rtTextureFlipY）：回贴四边形 UV 上下翻转", () => {
+    const dev = recordingDevice();
+    dev.rtTextureFlipY = true;
+    const pipeline = createThreePipeline(dev as never);
+    const target = pipeline.acquireTarget(64, 64);
+    let captured: THREE.Scene | undefined;
+    (dev as unknown as { render(s: unknown): void }).render = (s: unknown) => {
+      captured = s as THREE.Scene;
+    };
+    pipeline.blitTarget(target, { x: 0, y: 0, width: 10, height: 10 }, 100, 100);
+    const mesh = (captured as THREE.Scene).children[0] as THREE.Mesh;
+    const uv = mesh.geometry.getAttribute("uv") as THREE.BufferAttribute;
+    // PlaneGeometry 顶点 0 = 左上、2 = 左下：翻转后 v 镜像（左上 0、左下 1）
+    expect(uv.getY(0)).toBe(0);
+    expect(uv.getY(2)).toBe(1);
   });
 
   it("dispose：释放离屏目标与回贴资源", () => {

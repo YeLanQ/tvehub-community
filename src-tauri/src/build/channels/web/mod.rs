@@ -86,6 +86,14 @@ impl ChannelPipeline for WebPipeline {
         for (k, v) in content.binaries {
             binaries.entry(k).or_insert(v);
         }
+        // 启动预取清单（scenes/<名>.manifest.json）：仅多文件非 gzip 模式落盘——
+        // 该模式资产按文件逐个 fetch，清单能提前把它们并发拉起来；gzip/单页模式的
+        // 资产本就在归档/内联表里，预取无收益（也避免计入 assets_packed 统计）
+        for (rel, text) in content.manifests.drain(..) {
+            if !web.single_page && !web.gzip {
+                files.insert(rel, text);
+            }
+        }
 
         if ctx.cancelled() {
             return Err("任务已取消".into());

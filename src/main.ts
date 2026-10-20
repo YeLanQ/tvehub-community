@@ -11,6 +11,7 @@ import { isTauri } from "./lib/tauri-env";
 import { debugLog, debugError } from "./lib/debug-log";
 import { handleProjectOpenedFromHome, disposeEditor } from "./app/services/editorService";
 import { installFsWatch } from "./app/services/fs-watch";
+import { takeSessionRestart } from "./app/lib/session-restart";
 import { restoreDevToolsStatus, ensureCmdListener } from "./app/lib/devtools";
 import { api } from "./lib/api";
 import { getBootLoadingStore } from "./app/stores/boot-loading";
@@ -42,17 +43,26 @@ if (!isTauri()) {
   debugLog("boot", "not running inside Tauri; editor boots without desktop backend");
 } else {
   const myLabel = getCurrentWindow().label;
-  // 冷启动补偿：统一交接写入后端待交付状态，随后的 window:project-open 事件
-  // 广播可能在下面 listen 安装前发出而丢失。这里主动拉取（取走后清空），
-  // 保证首次打开也拿到真实项目而非兜底场景。
-  void api
-    .takePendingProject()
-    .then((pending) => {
-      if (pending && pending.rel) {
-        void handleProjectOpenedFromHome(pending.root, pending.name, pending.rel);
-      }
-    })
-    .catch((e) => debugLog("boot", `takePendingProject failed: ${e}`));
+  // 渲染后端变更的自动刷新交接（sessionStorage 标记，读后即清）：优先于后端待
+  // 交付拉取——重载场景下 pending 在首次打开时已被消费。刷新带来全新 JS 上下文，
+  // 渲染后端切换因此干净生效（模块级单例/渲染器历史全部归零）。
+  const restart = takeSessionRestart();
+  if (restart && restart.rel) {
+    const name = restart.root.split(/[\\/]/).filter(Boolean).pop() ?? restart.root;
+    void handleProjectOpenedFromHome(restart.root, name, restart.rel);
+  } else {
+    // 冷启动补偿：统一交接写入后端待交付状态，随后的 window:project-open 事件
+    // 广播可能在下面 listen 安装前发出而丢失。这里主动拉取（取走后清空），
+    // 保证首次打开也拿到真实项目而非兜底场景。
+    void api
+      .takePendingProject()
+      .then((pending) => {
+        if (pending && pending.rel) {
+          void handleProjectOpenedFromHome(pending.root, pending.name, pending.rel);
+        }
+      })
+      .catch((e) => debugLog("boot", `takePendingProject failed: ${e}`));
+  }
   // 统一窗口交接事件（热启动时窗口已就绪，事件直接到达）。只处理本窗口。
   // 与上面拉取的竞态由 handleProjectOpenedFromHome 短窗去重兜底。
   void listen<WindowProjectPayload & { label: string }>(

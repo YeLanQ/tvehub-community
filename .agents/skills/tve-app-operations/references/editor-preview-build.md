@@ -3,8 +3,10 @@
 ## 操作面：预览（WebPreviewPanel）
 
 - 进入「预览」页签（或 `preview.open`）自动完成：保存场景 → 导出运行时 +
-  scene.json + project.config.json 到 `<项目>/.tmp/web-preview` → 启动本地静态
-  服务 → iframe 嵌入。
+  scene.json + scene.manifest.json（启动预取清单：资产路径 + 运行时加载类型 +
+  boot/late 阶段）+ project.config.json 到 `<项目>/.tmp/web-preview` → 启动本地
+  静态服务 → iframe 嵌入。web 多文件构建同样产出 `scenes/<名>.manifest.json`
+  （release 改名/模型转 bin 后同步）；gzip/单页模式资产本就在归档/内联表内，不产清单。
 - 操作：**刷新**（重新导出并重载）、**在浏览器打开**、**停止预览**（释放端口）、
   **调试**按钮（postMessage `__editorPreviewDebug` 切运行时统计）——运行时内嵌
   页面另支持 **F3**（player.mjs:878，iframe 聚焦时生效）。

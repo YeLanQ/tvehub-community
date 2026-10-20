@@ -99,7 +99,8 @@ export function createThreePipeline(device: RHIDevice): RPIPipeline {
         mat.needsUpdate = true;
       }
       // 回贴不清屏：WebGPU 的清屏是整附件 loadOp 不受 scissor 控制，会毁掉主视图；
-      // scissor/viewport 入参即逻辑像素，与 RT 设备像素分辨率按像素比一一对应
+      // scissor/viewport 入参即逻辑像素（原点在画布左下角，与 WebGL 一致），
+      // 与 RT 设备像素分辨率按像素比一一对应；原点约定由设备后端换算
       device.setScissorTest(true);
       device.setScissor(rect);
       device.setViewport(rect);
@@ -120,11 +121,20 @@ export function createThreePipeline(device: RHIDevice): RPIPipeline {
     },
   };
 
-  /** 回贴四边形：全屏三角形铺满视口（配 ±1 正交相机），不读写深度 */
+  /** 回贴四边形：全屏三角形铺满视口（配 ±1 正交相机），不读写深度。
+   *  three/webgpu 的离屏纹理按上左角采样（内置 QuadMesh 同为 v=0 在顶），
+   *  标准 UV 需上下翻转，否则画中画等离屏回贴会垂直镜像
+   *  （见 RHIDevice.rtTextureFlipY）。 */
   function ensureBlitMesh(): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
     if (!blitMesh) {
+      const geometry = new THREE.PlaneGeometry(2, 2);
+      if (device.rtTextureFlipY) {
+        const uv = geometry.getAttribute("uv") as THREE.BufferAttribute;
+        for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+        uv.needsUpdate = true;
+      }
       blitMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(2, 2),
+        geometry,
         new THREE.MeshBasicMaterial({ depthTest: false, depthWrite: false }),
       );
       blitMesh.frustumCulled = false;

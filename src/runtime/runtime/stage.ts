@@ -42,6 +42,8 @@ function deviceOptions(cfg: StageConfig, preserveDrawingBuffer: boolean): RHIDev
     // additionalBrowserArgs 在浏览器进程级强制（该级别 Windows 生效）。
     powerPreference: powerPref(cfg),
     preserveDrawingBuffer,
+    // 启动分段计时只在非 release 构建开启（release：不采集、不输出、不挂全局）
+    traceStartup: cfg.debug !== false,
   };
 }
 

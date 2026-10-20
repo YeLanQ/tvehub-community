@@ -136,6 +136,50 @@ fn read_asset_bytes(root: &Path, rel: &str) -> Result<Vec<u8>, String> {
 pub(crate) const TEXTURE_FIELDS: [&str; 5] =
     ["map", "metalnessMap", "roughnessMap", "normalMap", "emissiveMap"];
 
+/// 场景资产引用（导出清单条目）：player 据此在解析 scene.json 的同时批量预取。
+/// - `load`：运行时经 `ResourceLoader` 的加载类型（arrayBuffer/text/json/blob），
+///   必须与真实消费点一致，否则缓存键不同会重复下载；
+/// - `phase`：boot = 首帧前需要（模型/材质/贴图/天空盒），late = 首帧后再用
+///   （音频缓冲/动画剪辑/逻辑资产）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AssetRef {
+    pub path: String,
+    pub load: &'static str,
+    pub phase: &'static str,
+}
+
+/// 追加资产引用（同路径去重；已存在时保留先写入的类型/阶段）
+pub(crate) fn push_asset_ref(
+    manifest: &mut Vec<AssetRef>,
+    path: &str,
+    load: &'static str,
+    phase: &'static str,
+) {
+    if path.is_empty() || manifest.iter().any(|a| a.path == path) {
+        return;
+    }
+    manifest.push(AssetRef {
+        path: path.to_string(),
+        load,
+        phase,
+    });
+}
+
+/// 资产清单 JSON（player 读取与场景文件同名的 `<场景名>.manifest.json`）
+pub(crate) fn asset_manifest_json(refs: &[AssetRef]) -> String {
+    let assets: Vec<serde_json::Value> = refs
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "path": a.path,
+                "type": a.load,
+                "phase": a.phase,
+            })
+        })
+        .collect();
+    serde_json::json!({ "version": 1, "assets": assets }).to_string()
+}
+
 /// 收集单个场景引用的全部资产（材质/贴图/模型），写入 files（文本）与 binaries
 /// （二进制）；跨场景共用同一 map 以去重。返回缺失（读取失败被跳过）的资产相对路径。
 /// - .mat 材质文本随导出（缺失跳过，player 回退默认参数）；
@@ -143,12 +187,15 @@ pub(crate) const TEXTURE_FIELDS: [&str; 5] =
 /// - 模型资产（glb/gltf/fbx/obj）二进制随导出——player 按同相对路径 fetch 后解析回放
 ///   （含内嵌动画）；缺失项跳过（player 渲染空组并告警）；
 /// - .gltf/.glb 外部引用的 buffers[].uri / images[].uri 指向模型同目录
-///   文件（.bin/贴图），一并随拷，保持与编辑器“同目录资源”解析规则一致。
+///   文件（.bin/贴图），一并随拷，保持与编辑器“同目录资源”解析规则一致；
+/// - manifest 收集「运行时经 ResourceLoader 实际加载」的资产（清单用于启动预取，
+///   模型内联兄弟文件由 GLTFLoader 自取，不进清单）。
 pub(crate) fn collect_scene_assets(
     root_path: &Path,
     scene_text: &str,
     files: &mut HashMap<String, String>,
     binaries: &mut HashMap<String, Vec<u8>>,
+    manifest: &mut Vec<AssetRef>,
 ) -> Vec<String> {
     let mut missing = Vec::new();
     let scene_json: serde_json::Value =
@@ -162,6 +209,7 @@ pub(crate) fn collect_scene_assets(
             continue;
         };
         files.insert(rel.clone(), text.clone());
+        push_asset_ref(manifest, rel, "json", "boot");
         // 材质引用的贴图二进制（缺失跳过，player 回退无贴图）
         if let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) {
             // 材质引用的着色器资产（.shader 文本随导出；缺失跳过，player 回退 PBR）
@@ -183,6 +231,7 @@ pub(crate) fn collect_scene_assets(
                         },
                     };
                     if let Some(shader_src) = shader_src {
+                        push_asset_ref(manifest, shader_rel, "text", "boot");
                         let parsed = crate::scene::shader::parse_shader(&shader_src);
                         let props = doc.get("props").and_then(|v| v.as_object());
                         for prop in parsed
@@ -196,14 +245,19 @@ pub(crate) fn collect_scene_assets(
                             else {
                                 continue;
                             };
-                            if tex.is_empty() || binaries.contains_key(tex) {
+                            if tex.is_empty() {
                                 continue;
                             }
-                            match read_asset_bytes(root_path, tex) {
-                                Ok(bytes) => {
-                                    binaries.insert(tex.to_string(), bytes);
+                            if !binaries.contains_key(tex) {
+                                match read_asset_bytes(root_path, tex) {
+                                    Ok(bytes) => {
+                                        binaries.insert(tex.to_string(), bytes);
+                                    }
+                                    Err(_) => missing.push(tex.to_string()),
                                 }
-                                Err(_) => missing.push(tex.to_string()),
+                            }
+                            if binaries.contains_key(tex) {
+                                push_asset_ref(manifest, tex, "blob", "boot");
                             }
                         }
                     }
@@ -218,6 +272,9 @@ pub(crate) fn collect_scene_assets(
                             }
                             Err(_) => missing.push(tex.to_string()),
                         }
+                    }
+                    if binaries.contains_key(tex) {
+                        push_asset_ref(manifest, tex, "blob", "boot");
                     }
                 }
             }
@@ -265,6 +322,7 @@ pub(crate) fn collect_scene_assets(
             }
         }
         binaries.insert(rel.clone(), bytes);
+        push_asset_ref(manifest, rel, "arrayBuffer", "boot");
     }
 
     // 天空盒 TextureCube 引用：.texcube 文本随导出（缺失跳过，player 回退色带天空），
@@ -277,6 +335,7 @@ pub(crate) fn collect_scene_assets(
             continue;
         };
         files.insert(rel.clone(), text.clone());
+        push_asset_ref(manifest, rel, "json", "boot");
         // 解析失败视作无引用（player 读取该文件同样解析失败 → 回退色带天空）
         let Some((_, _, map, faces)) = crate::scene::texcube::parse_texcube_doc(&text) else {
             continue;
@@ -293,14 +352,16 @@ pub(crate) fn collect_scene_assets(
             }
         }
         for tex in tex_refs {
-            if binaries.contains_key(&tex) || files.contains_key(&tex) {
-                continue;
-            }
-            match read_asset_bytes(root_path, &tex) {
-                Ok(bytes) => {
-                    binaries.insert(tex, bytes);
+            if !(binaries.contains_key(&tex) || files.contains_key(&tex)) {
+                match read_asset_bytes(root_path, &tex) {
+                    Ok(bytes) => {
+                        binaries.insert(tex.clone(), bytes);
+                    }
+                    Err(_) => missing.push(tex.clone()),
                 }
-                Err(_) => missing.push(tex),
+            }
+            if binaries.contains_key(&tex) {
+                push_asset_ref(manifest, &tex, "blob", "boot");
             }
         }
     }
@@ -309,56 +370,64 @@ pub(crate) fn collect_scene_assets(
     let mut audio_refs = Vec::new();
     crate::scene::migrate::collect_audio_refs(&scene_json, &mut audio_refs);
     for rel in &audio_refs {
-        if binaries.contains_key(rel) {
-            continue;
-        }
-        match read_asset_bytes(root_path, rel) {
-            Ok(bytes) => {
-                binaries.insert(rel.clone(), bytes);
+        if !binaries.contains_key(rel) {
+            match read_asset_bytes(root_path, rel) {
+                Ok(bytes) => {
+                    binaries.insert(rel.clone(), bytes);
+                }
+                Err(_) => missing.push(rel.clone()),
             }
-            Err(_) => missing.push(rel.clone()),
+        }
+        if binaries.contains_key(rel) {
+            push_asset_ref(manifest, rel, "arrayBuffer", "late");
         }
     }
     // 关键帧动画剪辑引用：.anim 文本随导出（缺失跳过，player 侧该组件空转）
     let mut anim_refs = Vec::new();
     crate::scene::migrate::collect_anim_refs(&scene_json, &mut anim_refs);
     for rel in &anim_refs {
-        if files.contains_key(rel) {
-            continue;
-        }
-        match crate::scene::material::read_material_text(root_path, rel) {
-            Ok(text) => {
-                files.insert(rel.clone(), text);
+        if !files.contains_key(rel) {
+            match crate::scene::material::read_material_text(root_path, rel) {
+                Ok(text) => {
+                    files.insert(rel.clone(), text);
+                }
+                Err(_) => missing.push(rel.clone()),
             }
-            Err(_) => missing.push(rel.clone()),
+        }
+        if files.contains_key(rel) {
+            push_asset_ref(manifest, rel, "json", "late");
         }
     }
     // 逻辑运行器引用：.fsm/.bt 文本随导出（缺失跳过，player 侧该运行器空转并告警）
     let mut logic_refs = Vec::new();
     crate::scene::migrate::collect_logic_refs(&scene_json, &mut logic_refs);
     for rel in &logic_refs {
-        if files.contains_key(rel) {
-            continue;
-        }
-        match crate::scene::material::read_material_text(root_path, rel) {
-            Ok(text) => {
-                files.insert(rel.clone(), text);
+        if !files.contains_key(rel) {
+            match crate::scene::material::read_material_text(root_path, rel) {
+                Ok(text) => {
+                    files.insert(rel.clone(), text);
+                }
+                Err(_) => missing.push(rel.clone()),
             }
-            Err(_) => missing.push(rel.clone()),
+        }
+        if files.contains_key(rel) {
+            push_asset_ref(manifest, rel, "text", "late");
         }
     }
     // 粒子系统节点贴图引用：图片二进制随导出（缺失跳过，player 回退内置软圆点）
     let mut particle_tex_refs = Vec::new();
     crate::scene::migrate::collect_particle_texture_refs(&scene_json, &mut particle_tex_refs);
     for rel in &particle_tex_refs {
-        if binaries.contains_key(rel) {
-            continue;
-        }
-        match read_asset_bytes(root_path, rel) {
-            Ok(bytes) => {
-                binaries.insert(rel.clone(), bytes);
+        if !binaries.contains_key(rel) {
+            match read_asset_bytes(root_path, rel) {
+                Ok(bytes) => {
+                    binaries.insert(rel.clone(), bytes);
+                }
+                Err(_) => missing.push(rel.clone()),
             }
-            Err(_) => missing.push(rel.clone()),
+        }
+        if binaries.contains_key(rel) {
+            push_asset_ref(manifest, rel, "blob", "boot");
         }
     }
     // UI Widget 图片引用（uiImageNode/uiButtonNode 的 image）：二进制随导出
@@ -366,14 +435,16 @@ pub(crate) fn collect_scene_assets(
     let mut ui_image_refs = Vec::new();
     crate::scene::migrate::collect_ui_image_refs(&scene_json, &mut ui_image_refs);
     for rel in &ui_image_refs {
-        if binaries.contains_key(rel) {
-            continue;
-        }
-        match read_asset_bytes(root_path, rel) {
-            Ok(bytes) => {
-                binaries.insert(rel.clone(), bytes);
+        if !binaries.contains_key(rel) {
+            match read_asset_bytes(root_path, rel) {
+                Ok(bytes) => {
+                    binaries.insert(rel.clone(), bytes);
+                }
+                Err(_) => missing.push(rel.clone()),
             }
-            Err(_) => missing.push(rel.clone()),
+        }
+        if binaries.contains_key(rel) {
+            push_asset_ref(manifest, rel, "blob", "boot");
         }
     }
     // 地形节点地形材质引用的贴图（splatmap + 图层 albedoMap/normalMap）：
@@ -381,14 +452,16 @@ pub(crate) fn collect_scene_assets(
     let mut terrain_tex_refs = Vec::new();
     crate::scene::migrate::collect_terrain_texture_refs(&scene_json, &mut terrain_tex_refs);
     for rel in &terrain_tex_refs {
-        if binaries.contains_key(rel) {
-            continue;
-        }
-        match read_asset_bytes(root_path, rel) {
-            Ok(bytes) => {
-                binaries.insert(rel.clone(), bytes);
+        if !binaries.contains_key(rel) {
+            match read_asset_bytes(root_path, rel) {
+                Ok(bytes) => {
+                    binaries.insert(rel.clone(), bytes);
+                }
+                Err(_) => missing.push(rel.clone()),
             }
-            Err(_) => missing.push(rel.clone()),
+        }
+        if binaries.contains_key(rel) {
+            push_asset_ref(manifest, rel, "blob", "boot");
         }
     }
     missing
@@ -613,7 +686,7 @@ mod tests {
         .to_string();
         let mut files = std::collections::HashMap::new();
         let mut binaries = std::collections::HashMap::new();
-        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries);
+        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries, &mut Vec::new());
 
         assert!(
             files.contains_key("assets/shaders/Rim.shader"),
@@ -626,6 +699,80 @@ mod tests {
             binaries.keys().collect::<Vec<_>>()
         );
         assert!(missing.is_empty(), "无缺失资产（实际 {missing:?}）");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 资产清单：每条引用带运行时真实加载类型与启动阶段（player 预取按此路由）；
+    /// 材质/贴图/模型为 boot，动画剪辑为 late。
+    #[test]
+    fn collect_scene_assets_emits_manifest_with_load_types_and_phases() {
+        use super::{asset_manifest_json, AssetRef};
+
+        let root = std::env::temp_dir().join(format!("tve-manifest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for dir in ["assets/materials", "assets/textures", "assets/models", "assets/animations"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        fs::write(
+            root.join("assets/materials/M.mat"),
+            serde_json::json!({
+                "type": "material",
+                "name": "M",
+                "map": "assets/textures/a.png",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(root.join("assets/textures/a.png"), b"png").unwrap();
+        fs::write(root.join("assets/models/a.glb"), b"glb").unwrap();
+        fs::write(root.join("assets/animations/Bob.anim"), "{}").unwrap();
+
+        let scene = serde_json::json!({
+            "type": "scene",
+            "root": { "type": "node", "id": "root", "children": [
+                { "type": "meshNode", "id": "m", "material": "assets/materials/M.mat",
+                  "source": "model", "model": "assets/models/a.glb",
+                  "components": [
+                    { "id": "ac1", "type": "animationClip", "enabled": true,
+                      "clip": { "clip": "assets/animations/Bob.anim", "autoplay": true } }
+                  ] }
+            ] }
+        })
+        .to_string();
+        let mut files = std::collections::HashMap::new();
+        let mut binaries = std::collections::HashMap::new();
+        let mut manifest = Vec::new();
+        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries, &mut manifest);
+        assert!(missing.is_empty(), "无缺失资产（实际 {missing:?}）");
+
+        let find = |path: &str| manifest.iter().find(|a| a.path == path).cloned();
+        assert_eq!(
+            find("assets/materials/M.mat"),
+            Some(AssetRef { path: "assets/materials/M.mat".into(), load: "json", phase: "boot" })
+        );
+        assert_eq!(
+            find("assets/textures/a.png"),
+            Some(AssetRef { path: "assets/textures/a.png".into(), load: "blob", phase: "boot" })
+        );
+        assert_eq!(
+            find("assets/models/a.glb"),
+            Some(AssetRef { path: "assets/models/a.glb".into(), load: "arrayBuffer", phase: "boot" })
+        );
+        assert_eq!(
+            find("assets/animations/Bob.anim"),
+            Some(AssetRef {
+                path: "assets/animations/Bob.anim".into(),
+                load: "json",
+                phase: "late",
+            })
+        );
+
+        // 清单 JSON 形状：version + assets[{path,type,phase}]
+        let doc: serde_json::Value = serde_json::from_str(&asset_manifest_json(&manifest)).unwrap();
+        assert_eq!(doc["version"], 1);
+        assert_eq!(doc["assets"].as_array().unwrap().len(), manifest.len());
+        assert!(doc["assets"][1]["type"].as_str().is_some());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -652,7 +799,7 @@ mod tests {
         .to_string();
         let mut files = std::collections::HashMap::new();
         let mut binaries = std::collections::HashMap::new();
-        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries);
+        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries, &mut Vec::new());
 
         assert!(
             binaries.contains_key("assets/models/cube.glb"),
@@ -710,7 +857,7 @@ mod tests {
         .to_string();
         let mut files = std::collections::HashMap::new();
         let mut binaries = std::collections::HashMap::new();
-        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries);
+        let missing = collect_scene_assets(&root, &scene, &mut files, &mut binaries, &mut Vec::new());
 
         assert!(
             files.contains_key("assets/logic/Enemy.fsm"),

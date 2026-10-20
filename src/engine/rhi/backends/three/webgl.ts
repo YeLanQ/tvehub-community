@@ -50,6 +50,8 @@ export async function createThreeWebGLDevice(options: RHIDeviceOptions): Promise
 
   const device: RHIDevice = {
     kind: "webgl",
+    // 经典 WebGLRenderer：RT 纹理存储与四边形 UV 同为左下角原点，不需翻转
+    rtTextureFlipY: false,
     domElement: renderer.domElement,
     native: renderer,
     configureDisplay(config: RHIDisplayConfig): void {

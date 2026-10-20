@@ -104,6 +104,17 @@ export class ResourceLoader {
     await Promise.all(urls.map((u) => this._load(u, type).catch(() => {})));
   }
 
+  /**
+   * 按资产清单批量预加载（导出清单 assets.manifest.json 的条目：逐条带真实加载
+   * 类型，与消费点缓存键一致）。失败项静默跳过——正式加载点仍会报错。
+   * 并发由 withLoadSlot 统一限流，调用顺序即优先级。
+   */
+  async preloadAll(entries: { path: string; type: LoadType }[]): Promise<void> {
+    await Promise.all(
+      entries.map((e) => this._load(e.path, e.type).catch(() => {})),
+    );
+  }
+
   /** 释放单个资源（所有类型） */
   unload(url: string): void {
     for (const key of this._cache.keys()) {

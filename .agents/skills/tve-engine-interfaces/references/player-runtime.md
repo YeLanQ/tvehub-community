@@ -19,12 +19,34 @@
   lod、shader(+Hooks)、graph-kernel/runtime/behaviors、
   pak/asset-bundle/resource（打包资产 shim）、loaders/compressed
 
-**player.mjs 只做装配**（952 行，源即产物手写维护）：main() 流程 =
-读 scene.json/config.json（或 `window.__TVE_BUILD_DATA` 内联）→ createRenderer/
-createStage → buildSceneTree → loadModels/loadMaterialParams/applyMeshTextures →
-sky/fog/terrain → createPhysicsWorker → createUI → createLogic → createScripts →
-createGraphBehaviors → createNavRuntime → createClipAnimations/createAnimationsWorker
-→ createParticles → createAudios → createRenderCamera → requestAnimationFrame(frame)。
+**player.mjs 只做装配**（源即产物手写维护）：main() 流程 =
+并行读 config.json / scene.json / `<场景>.manifest.json`（导出清单，逐条带真实
+加载类型；到达即 `resourceLoader.preloadAll` 预取 boot 阶段资产——arrayBuffer
+优先于 blob，网络等待与建树重叠）→ createRenderer → loadModels/loadMaterialParams
+→ buildSceneTree → 并发段（天空盒 / 网格·地形·UI 贴图 / 动画 Worker / 清单预取，
+各自 catch 不互相阻断）→ **单一资源汇合屏障**（`Promise.all` 后再装配天空面、
+贴合阴影、`warmupShaders`）→ createStage → createPhysicsWorker → createUI
+→ createLogic → createScripts → createGraphBehaviors → createNavRuntime →
+createClipAnimations → createParticles/createAudios → requestAnimationFrame(frame)。
+`ResourceLoader.preload/preloadAll` 走 6 路并发闸（`parallel.ts`），清单只是把
+原本分散在各阶段的 fetch 提前并发发起，正式加载点吃缓存；资产清单缺失（老产物/
+gzip 单包）时静默跳过，行为退回按阶段加载。
+
+**预热上限**：`warmupShaders` 经 `warmupWithDeadline` 包络——渲染预热 4s，超时只
+告警并先出首帧（剩余管线在首次绘制时惰性编译）。驱动/软件适配器上 `compileAsync`
+可能数十秒，不设上限会让入口页看门狗（15s）先报「启动超时」。WebGPU 适配器不可用/
+仅软件适配器/three 内部回退兼容层时 RHI 直接回退经典 WebGL（见 editor-engine 的
+「WebGPU 后端门控」）。社区版不设计算预热阶段。
+
+**启动分段打点**：`main()` 全程记录 `device-ready / shaders-ready / pipelines-ready /
+first-submit / first-visible`（`globalThis.__tveBootTiming.marks`）；首帧可见时汇总输出
+一行 `[boot] 设备协商 a+b ms | 着色器模块 N个/Tms | 渲染管线 N个/Tms | 计算管线 N个/Tms |
+预热完成 | 首帧提交 | 首帧可见 | DrawCalls`（postLog + console.info），结构化详情在
+`__tveBootTiming.report`（含 `__tveGpuTiming` 的适配器/init/模块字节数与管线异步数）。
+首帧统计必须在渲染后立即抓取——渲染管线结束后会 reset `info.render`。
+**release 构建（`debug:false`）零采集零输出**：不建 `__tveBootTiming`、不抓首帧统计、不排
+额外 rAF，RHI 侧以 `RHIDeviceOptions.traceStartup=false` 跳过 GPU 方法包装与
+`__tveGpuTiming`；预览/编辑器（debug 缺省）保持开启。
 
 **帧循环固定顺序**（frame() 本体；动顺序前先读懂注释链）：
 

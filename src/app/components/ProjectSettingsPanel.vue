@@ -17,7 +17,10 @@ import {
   saveProjectDraft,
   PROJECT_CONFIG_REL,
   type ProjectDraft,
+  type RendererBackend,
 } from "../lib/project-settings";
+import { dispatchCommand } from "../commands";
+import { markSessionRestart } from "../lib/session-restart";
 import { physicsBackendRegistry, type PhysicsBackendId } from "../../framework/physics";
 import {
   MAX_LAYERS,
@@ -33,6 +36,8 @@ const editorStore = getEditorStore();
 
 type SettingsCat = "basic" | "display" | "physics" | "resources" | "tagsLayers";
 const cat = ref<SettingsCat>("basic");
+/** 打开面板时的渲染后端（保存时比较：变化才触发刷新重启） */
+const originalRenderer = ref<RendererBackend | null>(null);
 const CATS: { id: SettingsCat; label: string }[] = [
   { id: "basic", label: "基础信息" },
   { id: "display", label: "显示与运行" },
@@ -108,6 +113,24 @@ async function save(): Promise<void> {
   saving.value = true;
   try {
     await saveProjectDraft(draft.value);
+    // 渲染后端不可运行期切换（模块级单例/渲染器历史无法跨会话复位）：保存当前
+    // 场景后整页刷新（等同 F5，全新 JS 上下文），启动时按 sessionStorage 交接
+    // 标记自动重开本项目——刷新后按新后端从零装配，干净生效。
+    if (
+      originalRenderer.value !== null &&
+      draft.value.renderer !== originalRenderer.value &&
+      projectStore.currentPath
+    ) {
+      await dispatchCommand("scene.save");
+      markSessionRestart({ root: projectStore.currentPath, rel: projectStore.sceneRel });
+      logStore.log(
+        "info",
+        `渲染后端已切换为 ${draft.value.renderer}，正在刷新项目使其生效…`,
+        "toolbar",
+      );
+      window.location.reload();
+      return;
+    }
     // 设计分辨率 → 相机辅助视锥取景即时同步（无需重开编辑器；
     // store 已在 saveProjectDraft 内 setDesignSize 更新）
     getEditorStore().engine.designResolution = {
@@ -131,6 +154,8 @@ async function save(): Promise<void> {
 onMounted(async () => {
   cat.value = "basic";
   draft.value = await loadProjectDraft();
+  // 记住打开时的渲染后端：保存时与之比较，变化才触发整页刷新重启
+  originalRenderer.value = draft.value.renderer;
   // 刷新资产列表以提供主场景下拉选项
   if (projectStore.currentPath) void assetsStore.load(projectStore.currentPath);
 });
@@ -287,8 +312,9 @@ onMounted(async () => {
                 引用的网格自动排除出两项优化。
               </p>
               <p class="ps-note">
-                渲染后端在编辑器启动/重载视口时生效；WebGPU 与 WebGL 的后端在运行时不可切换，
-                修改后请重新打开编辑器查看效果。设计分辨率修改会即时同步到相机辅助视锥线框。
+                渲染后端不可运行期切换：修改保存后会先保存场景并自动刷新项目（等同
+                F5）使其生效；WebGPU 不可用时自动回退 WebGL2。
+                设计分辨率修改会即时同步到相机辅助视锥线框。
                 两项批处理开关仅作用于运行期产物（编辑器视口不受影响），保存后
                 刷新预览面板或重新构建生效。
               </p>

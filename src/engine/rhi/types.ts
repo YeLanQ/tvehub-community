@@ -48,6 +48,11 @@ export interface RHIDeviceOptions {
   canvas?: HTMLCanvasElement;
   /** 着色器编译失败回调（接编辑器控制台/引擎事件） */
   onShaderError?: (error: RHIShaderError) => void;
+  /**
+   * 启动分段计时（WebGPU：适配器/init/着色器模块/管线；写 globalThis.__tveGpuTiming）。
+   * 缺省开启（编辑器/预览）；构建产物 release（debug=false）传 false，零采集零输出。
+   */
+  traceStartup?: boolean;
 }
 
 /** 显示配置（像素比/色调映射/阴影；任意子集，缺省项不动） */
@@ -93,7 +98,8 @@ export interface RHIRenderTarget {
   dispose(): void;
 }
 
-/** 矩形（视口/裁剪；逻辑像素，后端内部处理像素比换算） */
+/** 矩形（视口/裁剪；逻辑像素；原点 = 画布左下角，与 WebGL 一致；后端负责
+ *  像素比换算与自身原点约定转换——three/webgpu 是左上角原点） */
 export interface RHIRect {
   x: number;
   y: number;
@@ -111,6 +117,14 @@ export interface RHIDevice {
   readonly domElement: HTMLCanvasElement;
   /** 后端原生对象（遗留 WebGL 专属路径的逃生口；新代码不得依赖） */
   readonly native: unknown;
+  /**
+   * 离屏纹理回贴时的采样垂直翻转：true = 全屏四边形需把 UV 上下翻转。
+   * three/webgpu 渲染器的离屏纹理按上左角采样（其内置全屏四边形 QuadMesh 的
+   * UV 即 v=0 在顶），标准 PlaneGeometry（v=0 在底）直接回贴会上下镜像；
+   * 该约定在其内部 WebGPU 与 WebGL2 回退后端一致。经典 WebGLRenderer 的
+   * 存储与采样同向，不需要翻转。
+   */
+  readonly rtTextureFlipY: boolean;
 
   configureDisplay(config: RHIDisplayConfig): void;
   setPixelRatio(value: number): void;
@@ -142,3 +156,18 @@ export interface RHIDevice {
 
 /** 设备工厂（异步：WebGPU 设备需要 await init()） */
 export type RHIDeviceFactory = (options: RHIDeviceOptions) => Promise<RHIDevice>;
+
+/**
+ * 设备创建失败（registry 据此决定是否退避重试）：
+ * retryable=false 表示确定性不可用（无适配器/仅软件适配器/init 超时）——
+ * 重试只会把启动时间越拖越长，应立刻回退经典 WebGL。
+ */
+export class RHIDeviceCreationError extends Error {
+  readonly retryable: boolean;
+
+  constructor(message: string, retryable = true) {
+    super(message);
+    this.name = "RHIDeviceCreationError";
+    this.retryable = retryable;
+  }
+}

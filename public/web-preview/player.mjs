@@ -172,6 +172,26 @@ async function main() {
   // 发布构建（debug=false）关闭日志转发（编辑器内嵌预览默认转发）
   if (cfg.debug === false) setLogForwarding(false);
 
+  // —— 启动分段打点（性能诊断）——
+  // 时间轴：设备就绪 → 着色器模块/渲染管线预热 → 计算管线 → 首帧提交 → 首帧可见。
+  // RHI 侧（globalThis.__tveGpuTiming）提供适配器协商/init 用时与模块/管线计数，
+  // 首帧汇总后写入 globalThis.__tveBootTiming.report（控制台/编辑器日志同时输出）。
+  // release 构建（debug=false）**零采集零输出**：不建全局、不打点、不抓统计，
+  // RHI 侧同样以 traceStartup=false 跳过 GPU 方法包装。
+  const __bootTrace = cfg.debug !== false;
+  const __bootT0 = performance.now();
+  const __bootMarks = {};
+  const __bootRel = () => Math.round((performance.now() - __bootT0) * 10) / 10;
+  globalThis.__tveBootTiming = __bootTrace
+    ? { marks: __bootMarks, gpu: null, report: null }
+    : null;
+  /** 首帧渲染完立即抓取的统计（渲染管线结束后会 reset info，事后再读为 0） */
+  let __bootStats = null;
+  const __markBoot = (name) => {
+    if (!__bootTrace) return;
+    if (__bootMarks[name] === undefined) __bootMarks[name] = __bootRel();
+  };
+
   // 试玩广告接口层（playable 渠道产物 config.playableAd=true 激活；其他渠道
   // 零开销休眠）。宿主探测异步落定（mraid ready 等待不阻塞启动），可见性门
   // 接入下方帧循环（广告位不可见即暂停整帧）
@@ -183,6 +203,7 @@ async function main() {
   // renderer 可能因清除标志需要跨帧保留缓冲而重建（见 createRenderCamera 之后；
   // 重建时 pipeline 随新设备一起换出）
   const { renderer: initialRenderer, pipeline: initialPipeline, backend } = await createRenderer(cfg);
+  __markBoot("device-ready");
   let renderer = initialRenderer;
   let pipeline = initialPipeline;
   // KTX2 压缩纹理格式探测需要渲染器实例（先于首个模型加载注入；重复调用幂等）。
@@ -263,6 +284,39 @@ async function main() {
     const pick = cfg.scenes.find((s) => s && s.name === wanted) || cfg.scenes[0];
     return "./" + String(pick.file || "scene.json");
   })();
+
+  // 资产清单驱动的启动预取：导出时生成与场景文件同名的 `<场景>.manifest.json`
+  // （逐条带运行时真实加载类型与阶段）。清单与场景 JSON 并行读取，到达后立刻
+  // 批量预取 boot 阶段资产——网络等待与场景解析/建树重叠，正式加载点命中缓存。
+  // 队列顺序 = 6 路并发闸的优先级：材质/着色器/天空盒文档（小且建树前就要）→
+  // 模型二进制（大，下载早开始）→ 贴图（贴图阶段才消费）。
+  const manifestUrl = sceneUrl.replace(/\.json(\?|$)/, ".manifest.json$1");
+  const preloadPromise = resourceLoader
+    .loadJSON(manifestUrl)
+    .then((doc) => {
+      const assets = Array.isArray(doc && doc.assets) ? doc.assets : [];
+      const prio = { json: 0, text: 0, arrayBuffer: 1, blob: 2 };
+      const LOAD_TYPES = new Set(["arrayBuffer", "text", "json", "blob"]);
+      const boot = assets
+        .filter((a) => a && a.phase !== "late" && typeof a.path === "string")
+        .sort((a, b) => (prio[a.type] ?? 9) - (prio[b.type] ?? 9))
+        .map((a) => ({
+          path: a.path,
+          // 未知类型按二进制取：缓存键至少与模型/贴图加载点可能重合，不会污染
+          type: LOAD_TYPES.has(a.type) ? a.type : "arrayBuffer",
+        }));
+      return boot.length ? resourceLoader.preloadAll(boot) : undefined;
+    })
+    .catch(() => undefined);
+
+  // 脚本图文档与材质/模型并行读取（批处理前需要它判定排除实体）
+  const graphDocPromise = cfg.scriptGraph
+    ? resourceLoader.loadJSON(String(cfg.scriptGraph)).catch((e) => {
+        postLog("error", `脚本图文档装载失败: ${e?.message ?? e}`);
+        return null;
+      })
+    : null;
+
   const sceneData = await resourceLoader.loadJSON(sceneUrl);
 
   const rootJson = sceneData && sceneData.root;
@@ -298,14 +352,7 @@ async function main() {
   // 脚本图文档预载（先于批处理：图引用到的实体必须排除出静态烘焙——
   // 批处理会把原网格置 visible=false 并渲染合并副本，而图在运行期移动的是
   // 树中的原对象，被吞掉后位姿变化没有任何视觉表现）
-  let graphDoc = null;
-  if (cfg.scriptGraph) {
-    try {
-      graphDoc = await resourceLoader.loadJSON(String(cfg.scriptGraph));
-    } catch (e) {
-      postLog("error", `脚本图文档装载失败: ${e?.message ?? e}`);
-    }
-  }
+  const graphDoc = graphDocPromise ? await graphDocPromise : null;
 
   // 批处理优化：InstancedMesh + 静态几何合并（减少 DrawCall）。
   // nodes 全量传入：父链可动（祖先被图/动画引用、带脚本/刚体组件、导航代理）
@@ -373,40 +420,41 @@ async function main() {
 
   // 天空盒：场景里有 启用且可见 的 skyboxNode → 覆盖背景（与编辑器场景背景规则一致）；
   // 立方体天空盒优先消费天空材质（.mat）绑定的 TextureCube（材质 cubeMap 优先，
-  // 节点 cubeMap 兜底），未绑定/加载失败（含 .hdr）回退三段色带
+  // 节点 cubeMap 兜底），未绑定/加载失败（含 .hdr）回退三段色带。
+  // 与贴图/动画并行装配，首帧前由 assetsBarrier 统一汇合。
   let activeSkyKind = null;
   let skyMatParams = null;
-  {
+  const skyPromise = (async () => {
     const sky = findSkyNode(rootJson);
-    if (sky) {
-      activeSkyKind = sky.skyKind;
-      if (sky.material) {
-        try {
-          skyMatParams = await loadSkyMatParams(sky.material);
-        } catch {
-          skyMatParams = null;
-        }
+    if (!sky) return;
+    activeSkyKind = sky.skyKind;
+    if (sky.material) {
+      try {
+        skyMatParams = await loadSkyMatParams(sky.material);
+      } catch {
+        skyMatParams = null;
       }
-      const top = matColor(sky.topColor, SKY_DEFAULTS.top);
-      const horizon = matColor(sky.horizonColor, SKY_DEFAULTS.horizon);
-      const ground = matColor(sky.groundColor, SKY_DEFAULTS.ground);
-      scene.background =
-        sky.skyKind === "cube"
-          ? ((skyMatParams?.cubeMap || sky.cubeMap
-              ? await loadSkyTexCube(skyMatParams?.cubeMap || sky.cubeMap)
-              : null) ?? makeSkyBandTexture(top, horizon, ground))
-          : makeSkyEquirectTexture(top, horizon, ground, {
-              disk: sky.sunDisk,
-              color: sky.sunColor,
-              size: sky.sunSize,
-              glow: sky.sunGlow,
-              azimuth: sky.sunAzimuth,
-              elevation: sky.sunElevation,
-            });
-      // 不注入默认半球光：天空盒只作背景，不参与照明
     }
-  }
-  scene.updateMatrixWorld(true);
+    const top = matColor(sky.topColor, SKY_DEFAULTS.top);
+    const horizon = matColor(sky.horizonColor, SKY_DEFAULTS.horizon);
+    const ground = matColor(sky.groundColor, SKY_DEFAULTS.ground);
+    scene.background =
+      sky.skyKind === "cube"
+        ? ((skyMatParams?.cubeMap || sky.cubeMap
+            ? await loadSkyTexCube(skyMatParams?.cubeMap || sky.cubeMap)
+            : null) ?? makeSkyBandTexture(top, horizon, ground))
+        : makeSkyEquirectTexture(top, horizon, ground, {
+            disk: sky.sunDisk,
+            color: sky.sunColor,
+            size: sky.sunSize,
+            glow: sky.sunGlow,
+            azimuth: sky.sunAzimuth,
+            elevation: sky.sunElevation,
+          });
+    // 不注入默认半球光：天空盒只作背景，不参与照明
+  })().catch((e) => {
+    postLog("warn", `天空盒装配失败: ${e?.message ?? e}`);
+  });
 
   // 场景环境雾：场景里有 启用且可见 的 fogNode → 应用 scene.fog
   // （线性 Fog / 指数 FogExp2 / 高度雾，与编辑器 applyFogFromGraph 同一规则；
@@ -428,8 +476,8 @@ async function main() {
   }
 
   // 贴图回填（贴图文件已在导出产物内，按相对路径 fetch）
-  // 网格贴图与 UI 贴图互不依赖，并行加载
-  await Promise.all([
+  // 网格/地形/UI 贴图互不依赖，并行加载；与天空盒、动画并发，首帧前汇合
+  const texturePromise = Promise.all([
     applyMeshTextures(meshes, materialParams),
     applyTerrainSplatmaps(terrains),
     uiApi.applyTextures().catch((e) => {
@@ -440,6 +488,11 @@ async function main() {
   // 渲染相机（含清除标志：skybox/solidColor/depthOnly/colorOnly）
   const { cam, applyProjection, syncPose, clear, nodeId: renderCamNodeId } = createRenderCamera(cameras);
   const clearColor = new THREE.Color(clear.color);
+
+  // 资源汇合屏障：天空盒 / 贴图 / 动画（以及清单驱动的批量预取）全部就绪
+  // 后再做天空面装配、阴影贴合与着色器预热——并发段在此一处收口，首帧语义不变。
+  await Promise.all([skyPromise, texturePromise, animationPromise, preloadPromise]);
+  scene.updateMatrixWorld(true);
 
   // 仅深度/仅颜色清除标志需要跨帧保留缓冲：WebGL 默认关闭（省一整块画布带宽），
   // 命中时在挂载舞台前重建渲染器（首个渲染前 GPU 资源未上传，重建零成本）
@@ -597,14 +650,36 @@ async function main() {
   // 所以必须在渲染循环启动前置位）。
   configureShadows(scene);
 
-  // 首帧管线/着色程序预热：全部材质（含阴影深度变体）在载入阶段编译完毕
-  // （WebGPU 异步、WebGL 同步），避免首个渲染帧集中编译造成的启动卡顿
-  try {
-    await renderer.warmupShaders(scene, cam);
-  } catch (e) {
-    postLog("warn", `渲染预热失败（${e?.message ?? e}），首帧可能卡顿`);
+  // 预热上限：驱动/软件适配器下 compileAsync 可能数十秒，不能把首帧（以及入口页
+  // 15s 看门狗）一起等死——超时先出帧，剩余管线在首次绘制时惰性编译（会有一次
+  // 卡顿，但至少画面可见、不报启动超时）。
+  async function warmupWithDeadline(start, ms, label) {
+    let timer;
+    const work = (async () => {
+      try {
+        await start();
+      } catch (e) {
+        postLog("warn", `${label}失败（${e?.message ?? e}），首帧可能卡顿`);
+      }
+    })();
+    await Promise.race([
+      work,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          postLog("warn", `${label}超过 ${ms}ms，先出首帧（剩余管线惰性编译）`);
+          resolve();
+        }, ms);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
+  // 首帧管线/着色程序预热：全部材质（含阴影深度变体）在载入阶段编译完毕
+  // （WebGPU 异步、WebGL 同步），避免首个渲染帧集中编译造成的启动卡顿
+  await warmupWithDeadline(() => renderer.warmupShaders(scene, cam), 4000, "渲染预热");
+  __markBoot("shaders-ready");
+  // 社区版不设计算预热阶段（无 splat/warmupCompute），预热到此收口
+  __markBoot("pipelines-ready");
   // 模型动画（单剪辑/动画图，autoplay 的节点随渲染循环播放）
   // Worker 初始化已提前启动，此处 await 拿到 API 后绑定骨骼/IK 目标
   const animations = await animationPromise;
@@ -1033,6 +1108,49 @@ async function main() {
     if (e.key === "F3") { e.preventDefault(); toggleDebugPanel(); }
   });
 
+  // 首帧汇总：设备协商/模块/管线/预热/提交/可见六个实测值（含 DrawCall 体量），
+  // 用于区分「设备协商慢 / 着色器编译慢 / 首帧塞入资源过多」。控制台直出（发布
+  // 构建下 postLog 静默，console.info 仍可查）；结构同时挂在 __tveBootTiming。
+  function __reportBootTiming() {
+    if (!__bootTrace) return;
+    const g = globalThis.__tveGpuTiming || null;
+    const m = __bootMarks;
+    let stats = __bootStats;
+    if (!stats) {
+      try { stats = renderer.getStats(); } catch { /* 统计不可用时省略 */ }
+    }
+    const rel = (abs) => (typeof abs === "number" ? Math.round((abs - __bootT0) * 10) / 10 : null);
+    const gpu = g
+      ? {
+          adapterMs: Math.round(g.adapterMs * 10) / 10,
+          initMs: Math.round(g.initMs * 10) / 10,
+          shaderModules: { ...g.shaderModules, lastAt: rel(g.shaderModules.lastAt) },
+          renderPipelines: { ...g.renderPipelines, lastAt: rel(g.renderPipelines.lastAt) },
+          computePipelines: { ...g.computePipelines, lastAt: rel(g.computePipelines.lastAt) },
+        }
+      : null;
+    const report = {
+      backend,
+      marks: { ...m },
+      gpu,
+      drawCalls: stats?.drawCalls ?? null,
+      triangles: stats?.triangles ?? null,
+      programs: stats?.programs ?? null,
+    };
+    globalThis.__tveBootTiming.gpu = gpu;
+    globalThis.__tveBootTiming.report = report;
+    const ms = (v) => (v == null ? "-" : `${v}ms`);
+    const text =
+      `[boot] 设备协商 ${gpu ? `${gpu.adapterMs}+${gpu.initMs}ms` : "-"} | ` +
+      `着色器模块 ${gpu ? `${gpu.shaderModules.count}个/${Math.round(gpu.shaderModules.totalMs)}ms` : "-"} | ` +
+      `渲染管线 ${gpu ? `${gpu.renderPipelines.count}个/${Math.round(gpu.renderPipelines.totalMs)}ms` : "-"} | ` +
+      `计算管线 ${gpu ? `${gpu.computePipelines.count}个/${Math.round(gpu.computePipelines.totalMs)}ms` : "-"} | ` +
+      `预热完成 ${ms(m["pipelines-ready"])} | 首帧提交 ${ms(m["first-submit"])} | ` +
+      `首帧可见 ${ms(m["first-visible"])} | DrawCalls ${report.drawCalls ?? "-"}`;
+    postLog("info", text);
+    try { console.info(text, report); } catch { /* 控制台不可用 */ }
+  }
+
   function frame(now) {
     rafPending = false;
     if (pageHidden || !viewVisible) return; // 暂停态：由可见性监听恢复调度
@@ -1116,7 +1234,30 @@ async function main() {
     // 占用 → 单 pass 零开销；多层占用 → 按层拆，灯光只照亮各自掩码内的层）
     pipeline.renderView({ scene, camera: cam, clear: frameClear });
     // 首帧已渲染：解除入口页的启动看门狗（模板里的 10s 超时提示）
-    if (!window.__tvePreviewBooted) window.__tvePreviewBooted = true;
+    if (!window.__tvePreviewBooted) {
+      window.__tvePreviewBooted = true;
+      // 首帧提交打点：提交命令已入队；下一帧回调时首帧已被合成上屏（可见）。
+      // release 构建（__bootTrace=false）整段跳过：不抓统计、不排额外 rAF。
+      if (__bootTrace) {
+        __markBoot("first-submit");
+        // 统计必须在此刻抓（后续 render/管线 reset 会清零 info.render）
+        try { __bootStats = renderer.getStats(); } catch { __bootStats = null; }
+        if (!__bootStats || (!__bootStats.drawCalls && !__bootStats.triangles)) {
+          const ri = renderer.native?.info?.render;
+          if (ri) {
+            __bootStats = {
+              drawCalls: ri.drawCalls ?? ri.frameCalls ?? 0,
+              triangles: ri.triangles ?? 0,
+              programs: __bootStats?.programs ?? null,
+            };
+          }
+        }
+        requestAnimationFrame(() => {
+          __markBoot("first-visible");
+          __reportBootTiming();
+        });
+      }
+    }
     if (uiHidden > 0) uiApi.endRender(cam);
     // 调试统计：FPS（EMA 平滑）+ 帧距样本 + 场景网格/顶点遍历
     if (debugVisible) {
