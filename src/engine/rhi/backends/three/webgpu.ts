@@ -270,10 +270,45 @@ export async function createThreeWebGPUDevice(options: RHIDeviceOptions): Promis
       false,
     );
   }
+  // —— 设备丢失 / GPU 错误诊断面 ——
+  // three 在 WebGPUBackend 里挂了 device.lost.then() 与 onuncapturederror，默认只
+  // 打控制台并置 _isDeviceLost（渲染变空操作 = 视口停在最后/清屏帧，用户看到
+  // 白/黑屏且无任何提示）。这里包一层：先保留 three 的默认处理，再把事件接给
+  // 上层（RendererManager 据此停循环 + 重建设备）。
+  const hooks = renderer as unknown as {
+    onDeviceLost?: (info: { message?: string; reason?: string | null }) => void;
+    onError?: (info: { type?: string; message?: string }) => void;
+  };
+  const prevLost = hooks.onDeviceLost;
+  hooks.onDeviceLost = (info) => {
+    try {
+      prevLost?.call(renderer, info);
+    } catch {
+      /* three 默认处理失败不影响上报 */
+    }
+    options.onDeviceLost?.({
+      backend: "webgpu",
+      message: info?.message || "WebGPU 设备已丢失",
+      reason: info?.reason ?? null,
+    });
+  };
+  const prevError = hooks.onError;
+  hooks.onError = (info) => {
+    try {
+      prevError?.call(renderer, info);
+    } catch {
+      /* 同上 */
+    }
+    options.onGpuError?.({
+      backend: "webgpu",
+      type: info?.type || "GPUError",
+      message: info?.message || "未知 GPU 错误",
+    });
+  };
+
   // 启动分段计时：release 构建（traceStartup=false）不创建计时对象、不包装 GPU
   // 创建方法、不挂全局——零采集零输出（预热/首帧热路径无额外开销）
-  if (options.traceStartup !== false) {
-    const timing: WebGPUTiming = {
+  if (options.traceStartup !== false) {    const timing: WebGPUTiming = {
       adapterMs,
       initMs: performance.now() - initStart,
       shaderModules: { count: 0, totalMs: 0, bytes: 0, lastAt: null },

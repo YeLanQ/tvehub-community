@@ -135,3 +135,62 @@ describe("RendererManager GPU 软件渲染判定", () => {
     expect(detectSoftware("")).toBeNull();
   });
 });
+
+// 设备丢失接线：RHI 的丢失事件（WebGPU device lost / WebGL context lost）经
+// 恢复编排广播到引擎事件面；WebGPU 无自愈能力必须立刻停循环，WebGL 交给浏览器
+// 自愈（three 渲染在丢失期是空操作）不能停。这里只测接线与状态，不 mount。
+describe("RendererManager 设备丢失接线", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  type LostInternals = {
+    handleDeviceLost(info: { backend: "webgl" | "webgpu"; message: string }): void;
+    halted: boolean;
+    lossCtl: { dispose(): void };
+  };
+  const internals = (rm: RendererManager): LostInternals => rm as unknown as LostInternals;
+
+  it("WebGPU 丢失：广播 lost 并停止渲染循环（device 不可复用）", () => {
+    const rm = new RendererManager();
+    const events: unknown[] = [];
+    rm.setDeviceLostCb((i) => events.push(i));
+    internals(rm).handleDeviceLost({ backend: "webgpu", message: "out of memory" });
+    expect(events).toEqual([{ backend: "webgpu", phase: "lost", message: "out of memory" }]);
+    expect(internals(rm).halted).toBe(true);
+    internals(rm).lossCtl.dispose();
+  });
+
+  it("WebGL 丢失：广播 lost 但不停循环（等浏览器 contextrestored 自愈）", () => {
+    const rm = new RendererManager();
+    const events: unknown[] = [];
+    rm.setDeviceLostCb((i) => events.push(i));
+    internals(rm).handleDeviceLost({ backend: "webgl", message: "context lost" });
+    expect(events).toEqual([{ backend: "webgl", phase: "lost", message: "context lost" }]);
+    expect(internals(rm).halted).toBe(false);
+    internals(rm).lossCtl.dispose();
+  });
+
+  it("未丢失时 retryDevice 无操作（不重复重建）", () => {
+    const rm = new RendererManager();
+    const events: unknown[] = [];
+    rm.setDeviceLostCb((i) => events.push(i));
+    rm.retryDevice();
+    expect(events).toEqual([]);
+  });
+
+  it("GPU 未捕获错误回调可注入（渲染帧异常/WebGPU 验证错误汇总到应用层）", () => {
+    const rm = new RendererManager();
+    const seen: unknown[] = [];
+    rm.setGpuErrorCb((i) => seen.push(i));
+    (rm as unknown as { gpuErrorCb: ((i: unknown) => void) | null }).gpuErrorCb?.({
+      backend: "webgpu",
+      type: "GPUOutOfMemoryError",
+      message: "oom",
+    });
+    expect(seen).toEqual([{ backend: "webgpu", type: "GPUOutOfMemoryError", message: "oom" }]);
+  });
+});

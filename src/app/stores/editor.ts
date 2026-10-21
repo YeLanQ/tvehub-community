@@ -3,6 +3,7 @@ import { EditorEngine } from "../../framework/engine/EditorEngine";
 import type { Node } from "../../framework/prototype/Node";
 import { logStore } from "./log";
 import { animEditMode } from "../lib/anim-edit-mode";
+import { toastErr, toastOk, toastWarn } from "../lib/toast";
 import { debugLog } from "../../lib/debug-log";
 
 export type ViewMode = "scene" | "layout" | "preview" | "script";
@@ -147,6 +148,36 @@ export function getEditorStore(): EditorStore {
   // 着色器编译失败（three 的程序报错）→ 编辑器控制台（只接摘要，避免刷屏）
   engine.events.on("shader:error", ({ message }) => {
     logStore.log("error", `着色器编译失败: ${message}`, "engine");
+  });
+  // 渲染设备丢失/恢复：WebGPU device lost 与 WebGL context lost（GPU 复位、驱动
+  // TDR、显存不足、GPU 进程崩溃）在 three 层只会让视口停在最后一帧/清屏色上——
+  // 必须显式可见化，并给出「正在自动恢复 / 恢复失败可重试」的状态。
+  engine.events.on("renderer:lost", ({ backend, phase, message, attempt }) => {
+    const label = backend === "webgpu" ? "WebGPU" : "WebGL";
+    if (phase === "lost") {
+      logStore.log("warn", `渲染设备中断（${label}）：${message}。正在自动重建渲染器…`, "engine");
+      toastWarn(`渲染设备中断（${label}），正在自动恢复…`);
+    } else if (phase === "recovering") {
+      logStore.log("warn", `正在重建渲染器（第 ${attempt ?? 1} 次，${label}）…`, "engine");
+    } else if (phase === "recovered") {
+      logStore.log("info", `渲染已恢复（${label}）`, "engine");
+      toastOk("渲染已恢复");
+    } else {
+      logStore.log(
+        "error",
+        `渲染恢复失败（${label}）：${message}。点击重试，或重新打开项目/切换渲染后端`,
+        "engine",
+      );
+      toastErr(`渲染恢复失败（${label}）`, {
+        duration: 12000,
+        action: { label: "重试", run: () => engine.renderer.retryDevice() },
+      });
+    }
+  });
+  // GPU 未捕获错误（WebGPU 验证失败/显存不足、渲染帧异常摘要）：只进控制台，
+  // 不弹气泡（可能是每帧重复的同一错误，已由引擎侧节流）
+  engine.events.on("renderer:gpu-error", ({ type, message }) => {
+    logStore.log("error", `GPU 错误（${type}）：${message}`, "engine");
   });
   engine.history.events.on("changed", () => {
     if (state.mounted) state.dirty = true;

@@ -62,10 +62,14 @@ export function clearBackendFallback(): void {
  *   窗口快速切换）与 GPU 进程瞬时争用（编辑器窗口冷启动时 GPU 进程仍在预热）
  *   造成的失败挡在回退之前——静默回退到 WebGL 会让 WebGPU 特性
  *   「看起来是 webgpu 模式却不生效」。
+ * - strict=true（设备丢失后的重建）：只按请求的后端创建，失败抛错不降级。
+ *   启动期降级是安全的（材质按落点后端装配）；运行期降级会把已装配的 TSL/
+ *   NodeMaterial 材质搬到经典 WebGLRenderer 下——那套材质它根本不能渲染。
  */
 export async function createRHIDevice(
   kind: RHIBackendKind,
   options: RHIDeviceOptions = {},
+  opts?: { strict?: boolean },
 ): Promise<RHIDevice> {
   const prefer: RHIActiveBackend = kind === "auto" ? "webgpu" : kind;
   if (prefer === "webgpu") {
@@ -92,6 +96,14 @@ export async function createRHIDevice(
       }
       console.warn(`[rhi] WebGPU 设备创建失败（${errors.join(" | ")}），已回退 WebGL`);
       lastFallback = { requested: kind, actual: "webgl", errors };
+      if (opts?.strict === true) {
+        throw new RHIDeviceCreationError(
+          `WebGPU 重建失败（${errors.join(" | ")}）`,
+          true,
+        );
+      }
+    } else if (opts?.strict === true) {
+      throw new RHIDeviceCreationError("WebGPU 后端未注册（重建无法进行）", true);
     }
   }
   const webgl = factories.get("webgl");

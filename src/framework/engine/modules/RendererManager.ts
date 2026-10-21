@@ -2,8 +2,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createRHIDevice, type RHIDevice } from "../../../engine/rhi";
 import { registerThreeRHIBackends } from "../../../engine/rhi/backends/three";
+import type { RHIDeviceLostInfo, RHIGpuErrorInfo } from "../../../engine/rhi/types";
 import { createRPIPipeline, type RPIClearDesc, type RPIPipeline } from "../../../engine/rpi";
 import type { PiPRequest } from "./CameraPiP";
+import { DeviceLossController, type DeviceLossNotify, type RecoveryStep } from "./deviceLoss";
 import { FrameRateLimiter } from "./frameLimiter";
 import { RenderScaleController } from "./renderScale";
 
@@ -269,6 +271,33 @@ export class RendererManager {
   private statsVertices = 0;
   private statsTraverseAt = 0;
 
+  /** 挂载参数（设备丢失重建时按同一参数再建设备） */
+  private mountOptions: {
+    renderer: RendererBackend;
+    antialias: number;
+    hdrMode: "hdr" | "ldr";
+  } = { renderer: "webgl", antialias: 2, hdrMode: "ldr" };
+  /** 设备丢失/恢复状态回调（引擎事件 → 编辑器控制台与气泡） */
+  private deviceLostCb: ((info: DeviceLossNotify) => void) | null = null;
+  /** GPU 未捕获错误回调（WebGPU 验证失败/显存不足；渲染帧异常也走这里） */
+  private gpuErrorCb: ((info: RHIGpuErrorInfo) => void) | null = null;
+  /** 渲染循环是否因设备丢失而停摆（重建成功后恢复） */
+  private halted = false;
+  /** 画布事件解绑表（重建设备/卸载时清空，避免重复监听与 window 泄漏） */
+  private canvasCleanups: (() => void)[] = [];
+  /** 编辑器地面网格（重建时按后端是否软件渲染重选形态，需先移除旧的） */
+  private grid: THREE.Object3D | null = null;
+  /** 渲染帧连续异常计数（节流上报；设备正常时恒 0） */
+  private renderErrorFrames = 0;
+  /** 已卸载（丢失回调/恢复编排在卸载后不再动作） */
+  private disposed = false;
+  /** 设备丢失恢复编排（退避/崩溃循环防护/状态广播；重建动作见 rebuildDevice） */
+  private readonly lossCtl = new DeviceLossController({
+    halt: () => this.haltLoop(),
+    recover: (step) => this.rebuildDevice(step),
+    notify: (info) => this.deviceLostCb?.(info),
+  });
+
   async mount(
     container: HTMLElement,
     options?: {
@@ -278,18 +307,18 @@ export class RendererManager {
     },
   ): Promise<void> {
     this.container = container;
-    const backend = options?.renderer ?? "webgl";
+    this.disposed = false;
     const aa = Math.max(0, Math.min(8, Math.round(options?.antialias ?? 2)));
+    this.mountOptions = {
+      renderer: options?.renderer ?? "webgl",
+      antialias: aa,
+      hdrMode: options?.hdrMode ?? "ldr",
+    };
+    this.halted = false;
+    this.basePixelRatio = Math.min(window.devicePixelRatio, 2);
     // 设备创建经 RHI：后端解析/WebGPU 初始化/失败回退 WebGL 全部在 registry，
-    // 着色器编译失败摘要经 onShaderError 回调接出（three 默认只打印浏览器控制台）
-    registerThreeRHIBackends();
-    this.device = await createRHIDevice(backend, {
-      antialias: aa > 0,
-      msaaSamples: aa,
-      // preserveDrawingBuffer：仅深度/仅颜色清除标志需要跨帧保留颜色/深度缓冲
-      preserveDrawingBuffer: true,
-      onShaderError: (e) => this.shaderErrorCb?.(e.message),
-    });
+    // 着色器编译失败摘要与设备丢失事件经回调接出（three 默认只打印浏览器控制台）
+    this.device = await this.createDevice(this.mountOptions.renderer, aa);
     this.activeBackend = this.device.kind;
     this.gpuInfo = await readGpuInfo(this.device);
     this.pipeline = createRPIPipeline(this.device);
@@ -299,23 +328,7 @@ export class RendererManager {
     // HDR/LDR 渲染合成：HDR 用 ACES 电影级色调映射，LDR 常规输出（不映射）；
     // PCF 采样：每灯的 shadow.radius（Shadow 类型 Hard/Soft）只在 PCF 下生效，
     // PCFSoft 会忽略 radius，无法做每灯软硬差异
-    this.basePixelRatio = Math.min(window.devicePixelRatio, 2);
-    this.device.configureDisplay({
-      toneMapping: (options?.hdrMode ?? "ldr") === "hdr" ? "aces-filmic" : "none",
-      pixelRatio: this.basePixelRatio,
-      shadowMapEnabled: true,
-      shadowFilter: "pcf",
-    });
-
-    const dom = this.device.domElement;
-    dom.style.display = "block";
-    dom.style.position = "absolute";
-    dom.style.top = "0";
-    dom.style.left = "0";
-    // CSS 铺满容器：容器实时变化时画布视觉始终铺满，不会露出背景黑边
-    dom.style.width = "100%";
-    dom.style.height = "100%";
-    container.appendChild(dom);
+    this.applyDisplayConfig();
 
     this.scene.background = new THREE.Color(EDITOR_BACKGROUND_COLOR);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
@@ -323,36 +336,8 @@ export class RendererManager {
     // 编辑器自由视角恒全层可见（节点可挂任意渲染层级；Culling Mask 只作用于
     // 场景中的相机节点预览，自由视角若跟随掩码会出现"对象凭空消失"）
     this.camera.layers.enableAll();
-
-    this.orbit = new OrbitControls(this.camera, dom);
-    this.orbit.enableDamping = true;
-    this.orbit.dampingFactor = 0.08;
-
-    // 空闲降帧的活动信号：任何视口输入与相机运动（含阻尼收敛期间）恢复全速渲染。
-    // passive 监听只写时间戳，无分配；键盘挂 window（快捷键多在全局层）但
-    // 不认输入控件内的按键（面板输入框/脚本编辑器打字与视口无关，不该把
-    // 视口从空闲档唤醒——否则正常面板编辑会让视口 60↔12 反复横跳）。
-    const mark = (): void => this.markActivity();
-    const markIfNotEditable = (e: KeyboardEvent): void => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
-      mark();
-    };
-    dom.addEventListener("pointerdown", mark, { passive: true });
-    dom.addEventListener("pointermove", mark, { passive: true });
-    dom.addEventListener("wheel", mark, { passive: true });
-    window.addEventListener("keydown", markIfNotEditable, { passive: true });
-    this.orbit.addEventListener("change", mark);
-
-    dom.addEventListener("contextmenu", (e) => e.preventDefault(), { passive: false });
-    dom.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
-    dom.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
-    dom.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
-
-    // 软件光栅化（llvmpipe/SwiftShader）下 GL_LINES 缩放时不稳定：
-    // 网格改用着色器平面；硬件 WebGL / WebGPU 保持 GridHelper 原视觉。
-    const useShaderGrid = this.activeBackend === "webgl" && this.gpuInfo.software !== false;
-    this.scene.add(useShaderGrid ? createShaderGrid() : createLineGrid());
+    this.addGrid();
+    this.attachCanvas(this.device.domElement);
 
     this.registerCamera(this.camera);
     this.activeCamera = this.camera;
@@ -364,13 +349,229 @@ export class RendererManager {
     this.loop();
   }
 
-  dispose(): void {
+  /** 创建 RHI 设备（挂载与设备丢失重建共用；strict = 不允许静默降级后端） */
+  private createDevice(backend: RendererBackend, aa: number, strict = false): Promise<RHIDevice> {
+    // 设备创建经 RHI：后端解析/WebGPU 初始化/失败回退 WebGL 全部在 registry
+    registerThreeRHIBackends();
+    return createRHIDevice(
+      backend,
+      {
+        antialias: aa > 0,
+        msaaSamples: aa,
+        // preserveDrawingBuffer：仅深度/仅颜色清除标志需要跨帧保留颜色/深度缓冲
+        preserveDrawingBuffer: true,
+        onShaderError: (e) => this.shaderErrorCb?.(e.message),
+        onDeviceLost: (info) => this.handleDeviceLost(info),
+        onContextRestored: () => this.lossCtl.reportRestored(),
+        onGpuError: (info) => this.gpuErrorCb?.(info),
+      },
+      strict ? { strict: true } : undefined,
+    );
+  }
+
+  /** 显示配置（像素比含 DRS 精度档；重建后同样套用） */
+  private applyDisplayConfig(): void {
+    this.device.configureDisplay({
+      toneMapping: this.mountOptions.hdrMode === "hdr" ? "aces-filmic" : "none",
+      pixelRatio: this.basePixelRatio * this.renderScale,
+      shadowMapEnabled: true,
+      shadowFilter: "pcf",
+    });
+  }
+
+  /** 编辑器地面网格（软件 WebGL 用着色器平面，其余用 GridHelper；重建时按新判定重选） */
+  private addGrid(): void {
+    if (this.grid) {
+      this.scene.remove(this.grid);
+      this.grid = null;
+    }
+    // 软件光栅化（llvmpipe/SwiftShader）下 GL_LINES 缩放时不稳定
+    const useShaderGrid = this.activeBackend === "webgl" && this.gpuInfo.software !== false;
+    this.grid = useShaderGrid ? createShaderGrid() : createLineGrid();
+    this.scene.add(this.grid);
+  }
+
+  /**
+   * 把设备画布接到容器并绑定交互监听（含轨道控制器）。时钟/监听全部登记在
+   * canvasCleanups 里，重建设备时先整体解绑，避免同一事件被重复处理。
+   */
+  private attachCanvas(dom: HTMLCanvasElement): void {
+    dom.style.display = "block";
+    dom.style.position = "absolute";
+    dom.style.top = "0";
+    dom.style.left = "0";
+    // CSS 铺满容器：容器实时变化时画布视觉始终铺满，不会露出背景黑边
+    dom.style.width = "100%";
+    dom.style.height = "100%";
+    this.container.appendChild(dom);
+
+    // 空闲降帧的活动信号：任何视口输入与相机运动（含阻尼收敛期间）恢复全速渲染。
+    // passive 监听只写时间戳，无分配；键盘挂 window（快捷键多在全局层）但
+    // 不认输入控件内的按键（面板输入框/脚本编辑器打字与视口无关，不该把
+    // 视口从空闲档唤醒——否则正常面板编辑会让视口 60↔12 反复横跳）。
+    const mark = (): void => this.markActivity();
+    const markIfNotEditable = (e: KeyboardEvent): void => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      mark();
+    };
+    const prevent = (e: Event): void => e.preventDefault();
+    dom.addEventListener("pointerdown", mark, { passive: true });
+    dom.addEventListener("pointermove", mark, { passive: true });
+    dom.addEventListener("wheel", mark, { passive: true });
+    window.addEventListener("keydown", markIfNotEditable, { passive: true });
+    dom.addEventListener("contextmenu", prevent, { passive: false });
+    dom.addEventListener("gesturestart", prevent, { passive: false });
+    dom.addEventListener("gesturechange", prevent, { passive: false });
+    dom.addEventListener("gestureend", prevent, { passive: false });
+
+    this.orbit = new OrbitControls(this.camera, dom);
+    this.orbit.enableDamping = true;
+    this.orbit.dampingFactor = 0.08;
+    this.orbit.addEventListener("change", mark);
+
+    this.canvasCleanups.push(() => {
+      dom.removeEventListener("pointerdown", mark);
+      dom.removeEventListener("pointermove", mark);
+      dom.removeEventListener("wheel", mark);
+      window.removeEventListener("keydown", markIfNotEditable);
+      dom.removeEventListener("contextmenu", prevent);
+      dom.removeEventListener("gesturestart", prevent);
+      dom.removeEventListener("gesturechange", prevent);
+      dom.removeEventListener("gestureend", prevent);
+      this.orbit?.dispose();
+    });
+  }
+
+  /** 解绑画布事件并摘除画布（重建设备/卸载共用） */
+  private detachCanvas(): void {
+    for (const off of this.canvasCleanups.splice(0)) {
+      try {
+        off();
+      } catch {
+        /* 监听已随画布失效，不影响重建 */
+      }
+    }
+    const dom = this.device?.domElement;
+    dom?.parentElement?.removeChild(dom);
+  }
+
+  /** 设备/上下文丢失入口（RHI 回调）：交给恢复编排，不再静默留白屏 */
+  private handleDeviceLost(info: RHIDeviceLostInfo): void {
+    if (this.disposed) return;
+    console.warn(`[renderer] 设备丢失（${info.backend}）：${info.message}`);
+    this.lossCtl.reportLost(info.backend, info.message);
+  }
+
+  /** 停止渲染循环（设备已不可用；重建成功或上下文恢复后重新启动） */
+  private haltLoop(): void {
+    this.halted = true;
     cancelAnimationFrame(this.raf);
+  }
+
+  /**
+   * 重建渲染设备（恢复编排调用）：摘下并释放旧设备 → 按同一挂载参数建新设备 →
+   * 重套显示配置/尺寸/网格/画布监听 → 重启循环。场景、相机与所有提供方都不动，
+   * GPU 侧资源由新渲染器按材质/纹理懒重建。
+   */
+  private async rebuildDevice(step: RecoveryStep): Promise<boolean> {
+    const prev = this.device;
+    // 重建会把 OrbitControls 一起换掉：保存轨道目标，恢复后观感不跳回原点
+    const orbitTarget = this.orbit ? this.orbit.target.clone() : null;
+    this.detachCanvas();
+    try {
+      this.pipeline?.dispose();
+    } catch {
+      /* 旧管线随设备一起作废 */
+    }
+    try {
+      prev?.dispose();
+    } catch {
+      /* 已丢失的上下文在 dispose 时可能抛错 */
+    }
+    let device: RHIDevice;
+    try {
+      // 严格模式：运行期不允许静默降级后端（已装配的 TSL/NodeMaterial 材质
+      // 在经典 WebGLRenderer 下无法渲染，降级 = 整场黑屏）
+      device = await this.createDevice(
+        step.backend === "webgpu" ? "webgpu" : "webgl",
+        this.mountOptions.antialias,
+        true,
+      );
+    } catch (e) {
+      console.warn(
+        `[renderer] 设备重建失败：${e instanceof Error ? e.message : String(e)}`,
+      );
+      return false;
+    }
+    if (device.kind !== step.backend) {
+      try {
+        device.dispose();
+      } catch {
+        /* 落点不符直接丢弃 */
+      }
+      return false;
+    }
+    // 重建期间引擎被卸载（关窗口/换项目）：丢弃新设备，别再挂画布启循环
+    if (this.disposed) {
+      try {
+        device.dispose();
+      } catch {
+        /* 卸载路径 */
+      }
+      return false;
+    }
+    this.device = device;
+    this.activeBackend = device.kind;
+    this.gpuInfo = await readGpuInfo(device);
+    this.pipeline = createRPIPipeline(device);
+    // 过载导致丢失时，原分辨率档位重建后会立刻再丢：先降一档，再交给 DRS 收敛
+    const steps = RenderScaleController.STEPS as readonly number[];
+    const at = steps.indexOf(this.renderScale);
+    this.renderScale = this.renderScaleCtl.reset(at >= 0 ? Math.min(at + 1, steps.length - 1) : 1);
+    this.applyDisplayConfig();
+    this.addGrid();
+    this.attachCanvas(device.domElement);
+    // 轨道目标沿用丢失前的（新建 OrbitControls 默认看向原点）
+    if (orbitTarget) {
+      this.orbit.target.copy(orbitTarget);
+      this.orbit.update();
+    }
+    this.appliedW = 0;
+    this.appliedH = 0;
+    this.applySizeIfNeeded();
+    this.lastRafAt = 0;
+    this.lastActivityAt = performance.now();
+    this.renderErrorFrames = 0;
+    this.halted = false;
+    this.loop();
+    return true;
+  }
+
+  /** 设备丢失恢复回调（引擎事件 → 编辑器控制台/气泡） */
+  setDeviceLostCb(cb: ((info: DeviceLossNotify) => void) | null): void {
+    this.deviceLostCb = cb;
+  }
+  /** GPU 未捕获错误回调（WebGPU 验证失败/显存不足、渲染帧异常摘要） */
+  setGpuErrorCb(cb: ((info: RHIGpuErrorInfo) => void) | null): void {
+    this.gpuErrorCb = cb;
+  }
+
+  /** 自动恢复失败后的人工重试（气泡「重试」按钮调用） */
+  retryDevice(): void {
+    this.lossCtl.retry();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    this.lossCtl.dispose();
     this.resizeObs?.disconnect();
-    this.orbit?.dispose();
+    this.resizeObs = undefined;
+    this.detachCanvas();
+    this.grid = null;
     this.pipeline?.dispose();
     if (this.device) {
-      this.device.domElement.parentElement?.removeChild(this.device.domElement);
       this.device.dispose();
     }
   }
@@ -501,7 +702,7 @@ export class RendererManager {
   };
 
   private loop = (): void => {
-    if (this.paused) return;
+    if (this.paused || this.halted || this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
     // 活动内容钩子（动画/粒子/物理/导航/逻辑；着色器 Hook 是时间型动画不算
     // 活动，否则 GL 侧材质注册表恒真会把视口钉死全速）：既驱动空闲降帧判定，
@@ -536,7 +737,25 @@ export class RendererManager {
       this.device.setShadowMapOnDemand(this.shadowDirtyRequested || contentActive);
       this.shadowDirtyRequested = false;
     }
-    if (this.device) this.renderActive();
+    if (this.device) {
+      try {
+        this.renderActive();
+        this.renderErrorFrames = 0;
+      } catch (e) {
+        this.renderErrorFrames++;
+        if (this.renderErrorFrames === 1 || this.renderErrorFrames % 120 === 0) {
+          // 设备已丢失时 pass 抛错是「上下文不可用」的副产物，不算渲染事故：
+          // 只让丢失/恢复链路自己的气泡说话，避免控制台把同一件事报两遍
+          if (this.lossCtl.phase === "ok") {
+            this.gpuErrorCb?.({
+              backend: this.activeBackend === "webgpu" ? "webgpu" : "webgl",
+              type: e instanceof Error ? e.name : "RenderError",
+              message: e instanceof Error ? e.message : String(e),
+            });
+          }
+        }
+      }
+    }
     this.recordFrame(now, idleGated);
   };
 

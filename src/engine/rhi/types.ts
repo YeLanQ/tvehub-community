@@ -31,6 +31,26 @@ export interface RHIShaderError {
   message: string;
 }
 
+/**
+ * 设备/上下文丢失信息（GPU 复位、驱动 TDR、显存不足、GPU 进程崩溃的后果）：
+ * - WebGPU：`GPUDevice.lost` 兑现 → 设备永久不可用，只能重建渲染器；
+ * - WebGL：`webglcontextlost` → 上下文不可用，浏览器可能随后自动恢复。
+ */
+export interface RHIDeviceLostInfo {
+  backend: RHIActiveBackend;
+  message: string;
+  /** WebGPU device lost 的 reason（"destroyed" 不会上报；其余如 out-of-memory/unknown） */
+  reason?: string | null;
+}
+
+/** GPU 未捕获错误（WebGPU uncapturederror / 渲染帧抛错摘出的摘要；仅诊断用） */
+export interface RHIGpuErrorInfo {
+  backend: RHIActiveBackend;
+  /** 错误类型（GPUValidationError / GPUOutOfMemoryError / 帧异常名等） */
+  type: string;
+  message: string;
+}
+
 /** 设备创建选项（表面/上下文参数；跨帧保留缓冲、MSAA、功耗偏好） */
 export interface RHIDeviceOptions {
   /** MSAA 抗锯齿开关 */
@@ -48,6 +68,12 @@ export interface RHIDeviceOptions {
   canvas?: HTMLCanvasElement;
   /** 着色器编译失败回调（接编辑器控制台/引擎事件） */
   onShaderError?: (error: RHIShaderError) => void;
+  /** 设备/上下文丢失回调（上层据此停止渲染并重建设备） */
+  onDeviceLost?: (info: RHIDeviceLostInfo) => void;
+  /** WebGL 上下文自动恢复回调（three 已重装渲染状态；上层撤销「中断」提示） */
+  onContextRestored?: (info: { backend: RHIActiveBackend }) => void;
+  /** GPU 未捕获错误回调（诊断面：验证失败/显存不足等） */
+  onGpuError?: (info: RHIGpuErrorInfo) => void;
   /**
    * 启动分段计时（WebGPU：适配器/init/着色器模块/管线；写 globalThis.__tveGpuTiming）。
    * 缺省开启（编辑器/预览）；构建产物 release（debug=false）传 false，零采集零输出。

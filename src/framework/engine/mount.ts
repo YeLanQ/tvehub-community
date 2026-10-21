@@ -41,6 +41,9 @@ export async function mountEditorEngine(
   await applyBackendMaterialPolicy(engine);
   // 着色器编译失败 → 引擎事件（应用层桥接到编辑器控制台）
   engine.renderer.setShaderErrorCb((message) => engine.events.emit("shader:error", { message }));
+  // 设备丢失/恢复进度与 GPU 错误 → 引擎事件（应用层：控制台 + 气泡；恢复失败可重试）
+  engine.renderer.setDeviceLostCb((info) => engine.events.emit("renderer:lost", info));
+  engine.renderer.setGpuErrorCb((info) => engine.events.emit("renderer:gpu-error", info));
   // UI 布局视图独占渲染：隐藏画布祖先链与 gizmo 之外的顶层子树，
   // 布局视口只显示 Canvas 下的节点
   engine.uiSystem.attach(engine.renderer.scene, [engine.gizmo.getGizmoHelper()]);

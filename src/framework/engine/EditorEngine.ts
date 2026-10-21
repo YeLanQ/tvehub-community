@@ -158,6 +158,10 @@ export interface EditorEvents extends Record<string, unknown> {
   "shader:error": { message: string };
   /** 模型资产解析状态变更（加载完成/失败/失效后广播；rel 为空串表示全部） */
   "model:changed": { rel: string };
+  /** 渲染设备丢失/恢复（WebGPU device lost、WebGL context lost 的自动重建进度） */
+  "renderer:lost": import("./modules/deviceLoss").DeviceLossNotify;
+  /** GPU 未捕获错误/渲染帧异常摘要（诊断面：验证失败、显存不足、pass 抛错） */
+  "renderer:gpu-error": import("../../engine/rhi/types").RHIGpuErrorInfo;
   /** GPU 硬件/软件识别（挂载完成后一次；software=null 表示驱动屏蔽了字符串） */
   "renderer:info": GpuRendererInfo;
   /** 节点动画运行时变化（播放/暂停/图状态切换/参数写入） */

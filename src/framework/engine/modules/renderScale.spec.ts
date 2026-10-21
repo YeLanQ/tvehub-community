@@ -53,3 +53,24 @@ describe("RenderScaleController", () => {
     expect(s).toBe(0.7);
   });
 });
+
+// 设备丢失重建后的保守起步：先降一档再交给 DRS 收敛（过载导致丢失时，原档位
+// 重建后会立刻再丢）。reset 同时清空过载/健康计数与观察窗。
+describe("RenderScaleController 重建后重置", () => {
+  it("reset 落到指定档位并清空计数（越界收敛到合法区间）", () => {
+    const c = new RenderScaleController();
+    for (let i = 0; i < 8; i++) c.tick(true);
+    expect(c.scale).toBe(0.85);
+    expect(c.reset(2)).toBe(0.7);
+    expect(c.reset(99)).toBe(0.5);
+    expect(c.reset(-3)).toBe(1);
+  });
+
+  it("reset 之后不受之前过载计数影响（需要重新积累 8 个超预算 tick 才降档）", () => {
+    const c = new RenderScaleController();
+    for (let i = 0; i < 8; i++) c.tick(true); // 已降到 0.85
+    c.reset(0);
+    for (let i = 0; i < 7; i++) expect(c.tick(true)).toBe(1);
+    expect(c.tick(true)).toBe(0.85);
+  });
+});

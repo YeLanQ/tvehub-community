@@ -46,6 +46,22 @@ export async function createThreeWebGLDevice(options: RHIDeviceOptions): Promise
       cb({ message: shaderErrorSummary(context as never, vs, fs) });
     };
   }
+  // 上下文丢失/恢复：three 自己的监听只做 preventDefault + 重装渲染状态（静默——
+  // 用户只看到画布变空白）。这里追加一层把事件接给上层：丢失时可见化并启动
+  // 自愈看门狗，恢复时撤销提示。GPU 复位/显存压力/驱动 TDR 都走这条链路。
+  const canvasEl = renderer.domElement;
+  const onContextLost = (): void => {
+    options.onDeviceLost?.({
+      backend: "webgl",
+      message: "WebGL 上下文丢失（GPU 复位 / 显存或驱动压力）",
+      reason: "context-lost",
+    });
+  };
+  const onContextRestored = (): void => {
+    options.onContextRestored?.({ backend: "webgl" });
+  };
+  canvasEl.addEventListener("webglcontextlost", onContextLost, false);
+  canvasEl.addEventListener("webglcontextrestored", onContextRestored, false);
   let pixelRatio = renderer.getPixelRatio();
 
   const device: RHIDevice = {
@@ -130,6 +146,8 @@ export async function createThreeWebGLDevice(options: RHIDeviceOptions): Promise
       };
     },
     dispose(): void {
+      canvasEl.removeEventListener("webglcontextlost", onContextLost, false);
+      canvasEl.removeEventListener("webglcontextrestored", onContextRestored, false);
       renderer.dispose();
     },
   };

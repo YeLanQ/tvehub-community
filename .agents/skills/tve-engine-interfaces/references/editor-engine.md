@@ -27,8 +27,8 @@
 |---|---|
 | `factory: NodeFactory` | 节点工厂（默认注册表） |
 | `graph: SceneClient` | 场景镜像（读 get/all，写走命令方法） |
-| `events: EventBus<EditorEvents>` | 13 种事件：graph:changed、select:changed、gizmo:state、material/shader/model/animation/audio/physics/particles/logic:changed、shader:error、pip:state（画中画浮层状态） |
-| `renderer: RendererManager` | 视口渲染策略层：设备创建/后端回退与渲染管线经 `src/engine` RHI/RPI 抽象（three 只进 `engine/*/backends`），帧率双档（活动期 Bresenham 数帧锁 60——`FrameRateLimiter`，60Hz 屏零回归、高刷屏锁 60；空闲降帧 markActivity/addActivityHook/viewportActive：交互与活动内容全速档，静止视口 12fps 省电）；阴影图按需重画（markShadowDirty：图变更/几何重建/活动内容才重画一次，静态场景免整套阴影 pass，DrawCall 约减半）；画中画（setPiPProvider：主渲染后按选中相机节点离屏 RT 渲染 + scissor 回贴右下角矩形，RPI 管线承担；见 modules/CameraPiP.ts） |
+| `events: EventBus<EditorEvents>` | 15 种事件：graph:changed、select:changed、gizmo:state、material/shader/model/animation/audio/physics/particles/logic:changed、shader:error、renderer:info、renderer:lost（设备丢失/恢复进度）、renderer:gpu-error、pip:state（画中画浮层状态） |
+| `renderer: RendererManager` | 视口渲染策略层：设备创建/后端回退与渲染管线经 `src/engine` RHI/RPI 抽象（three 只进 `engine/*/backends`），帧率双档（活动期 Bresenham 数帧锁 60——`FrameRateLimiter`，60Hz 屏零回归、高刷屏锁 60；空闲降帧 markActivity/addActivityHook/viewportActive：交互与活动内容全速档，静止视口 12fps 省电）；阴影图按需重画（markShadowDirty：图变更/几何重建/活动内容才重画一次，静态场景免整套阴影 pass，DrawCall 约减半）；画中画（setPiPProvider：主渲染后按选中相机节点离屏 RT 渲染 + scissor 回贴右下角矩形，RPI 管线承担；见 modules/CameraPiP.ts）；**设备丢失恢复**（见下） |
 | `synchronizer: SceneSynchronizer` | 镜像 Node → three Object3D 同步 |
 | `helperSystem / gizmo: GizmoController` | 辅助线 / 变换手柄 |
 | `terrainPaint: TerrainPaintController` | 地形绘制笔刷（begin/endTerrainPaint） |
@@ -51,6 +51,26 @@ WARP、Microsoft Basic Render，或 `isFallbackAdapter=true`）/ init 超过 6s�
 / `createComputePipeline[Async]`，把适配器协商、init、模块数/字节/耗时、管线数/耗时写入
 `globalThis.__tveGpuTiming`（player 汇总首帧提交/可见后输出，见 player-runtime）。
 `RHIDeviceOptions.traceStartup=false`（release 构建）时跳过全部包装与全局，零采集。
+
+**设备丢失恢复**（`modules/deviceLoss.ts` + RendererManager）：渲染压力过大（显存不足、
+驱动 TDR、GPU 进程崩溃）会让 GPU 侧失效——WebGPU 的 `device.lost` 之后 three 把 render
+降级为空操作，WebGL 的 `contextlost` 期间 likewise；旧实现在两种情况下都**静默停在最后
+一帧/清屏色**（用户看到白屏或黑屏）。现在：
+
+- RHI 设备（`RHIDeviceOptions.onDeviceLost/onContextRestored/onGpuError`）上报事件：
+  WebGPU 包一层 three 的 `renderer.onDeviceLost/onError`（先保留其默认日志与
+  `_isDeviceLost` 置位）；WebGL 在画布上挂 `webglcontextlost/restored`。
+- `DeviceLossController` 编排恢复：WebGPU 停循环后按 0.3s/2s/5s 同后端重建（**不降级
+  WebGL**——已装配的 TSL/NodeMaterial 在经典 WebGLRenderer 下无法渲染）；WebGL 先等
+  浏览器自愈（6s 看门狗），超时才重建设备。恢复成功后 10s 内再丢视为崩溃循环，跳过首档；
+  三档全败 → 广播 failed（应用层气泡带「重试」，`renderer.retryDevice()`）。
+- 重建内容：摘旧画布与事件 → 释放旧设备/管线 → **strict 模式**建新设备（registry
+  `createRHIDevice(..., {strict:true})` 不允许静默回退）→ 重套显示配置/尺寸/网格/画布
+  监听 → 重启循环；场景、相机、提供方全部复用。重建后 DRS 先降一档，避免同档位立刻再丢。
+- 渲染帧异常（pass 抛错）被 loop 兜住并节流上报 `renderer:gpu-error`，不再每帧抛一次
+  而画面停在清屏色。
+- 应用层（stores/editor）把 `renderer:lost` 的 lost/recovering/recovered/failed 四相写
+  控制台并按相弹气泡；`renderer:gpu-error` 只进控制台。
 
 **节点创建方法族**：`addEmptyGroup / addMesh(geometryKind,parent) / addDataMesh(parent)
 （source=data 数据化网格，载荷经检查器导入）/ addLight(kind,parent) /

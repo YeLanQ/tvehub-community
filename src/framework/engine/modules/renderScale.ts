@@ -34,6 +34,19 @@ export class RenderScaleController {
     return RenderScaleController.STEPS[this.idx];
   }
 
+  /**
+   * 强制落到指定档位（设备丢失重建后用：先把分辨率降下来，避免新设备在同样的
+   * 过载下立刻再丢）。idx 越界收敛到合法区间，并清空过载/健康计数与观察窗。
+   */
+  reset(idx = 0): number {
+    const C = RenderScaleController;
+    this.idx = Math.min(C.STEPS.length - 1, Math.max(0, Math.round(idx)));
+    this.over = 0;
+    this.stable = 0;
+    this.sinceChange = C.CHANGE_GAP_TICKS;
+    return this.scale;
+  }
+
   /** 每个 rAF tick 喂一次；overBudget = 本 tick 帧距超出刷新预算。返回当前精度 */
   tick(overBudget: boolean): number {
     const C = RenderScaleController;
