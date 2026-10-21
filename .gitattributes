@@ -5,3 +5,5 @@ src/generated/** text eol=lf
 public/licenses/** text eol=lf
 # 文档一律 LF：autocrlf checkout 出 CRLF 会让 skills:check 的 frontmatter 正则失配（已两次复发）
 *.md text eol=lf
+# 提交门禁钩子是 shell 脚本：必须 LF（CRLF 的 shebang 在 POSIX sh 下直接失效）
+.githooks/** text eol=lf

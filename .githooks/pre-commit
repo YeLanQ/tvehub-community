@@ -1,0 +1,16 @@
+#!/bin/sh
+# 提交门禁：任何 git commit 前必须过完整本地 CI 链（失败即拒绝提交）。
+# 安装（一次性，仓库本地配置）：pnpm hooks:install（= git config core.hooksPath .githooks）
+# 纪律：--no-verify 绕过本钩子 = 跳过门禁，属红灯区违规（见 tve-agent-autonomy 行动边界）。
+echo "[pre-commit] 运行本地门禁链 pnpm ci:local（约 1 分钟，非零退出即拒绝提交）…"
+pnpm ci:local
+code=$?
+if [ "$code" -ne 0 ]; then
+  echo "" >&2
+  echo "[pre-commit] 门禁未过（退出码 $code），已拒绝提交。" >&2
+  echo "  - 先修复失败项再提交；失败分诊：.agents/skills/tve-local-ci/references/ci-runbook.md" >&2
+  echo "  - 红灯纪律：不得以 --no-verify / --skip 让链路变绿；连续 2 轮修不好停下来重新诊断。" >&2
+  exit 1
+fi
+echo "[pre-commit] 门禁全绿，放行提交。"
+exit 0

@@ -5,9 +5,10 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
+    "hooks:install": "git config core.hooksPath .githooks",
     "devtools": "node scripts/devtools/cli.mjs",
     "devtools:selftest": "node --test scripts/devtools/client.test.mjs",
-    "dev": "node scripts/sync-version.mjs && vitest run && vite",
+    "dev": "pnpm hooks:install && node scripts/sync-version.mjs && vitest run && vite",
     "check:layers": "node scripts/check-layers.mjs",
     "check:surface": "node runtime/bridge/check-surface.mjs",
     "test:bridge": "node runtime/bridge/bridge.spec.mjs",
