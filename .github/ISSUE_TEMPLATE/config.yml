@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 参与贡献前请先读 CONTRIBUTING
+    url: https://github.com/YeLanQ/tvehub-community/blob/main/CONTRIBUTING.md
+    about: 环境准备、代码规范、ci:local 门禁链与 PR 检查清单都在这里
+  - name: 使用问题与讨论
+    url: https://github.com/YeLanQ/tvehub-community/discussions
+    about: 不确定是不是缺陷、想先讨论方案，请走 Discussions
